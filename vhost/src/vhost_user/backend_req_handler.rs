@@ -548,6 +548,11 @@ impl<S: VhostUserBackendReqHandler> BackendReqHandler<S> {
                 let msg = self.extract_request_body::<VhostUserInflight>(&hdr, size, &buf)?;
                 let res = self.backend.set_inflight_fd(&msg, file);
                 self.send_ack_message(&hdr, res)?;
+            },
+            Ok(FrontendReq::GPU_SET_SOCKET) => {
+                println!("TODO: Got GPU_SET_SOCKET: {files:?}, leaking the handle");
+                mem::forget(files.unwrap().swap_remove(0));
+                self.send_ack_message(&hdr, Ok(()))?;
             }
             Ok(FrontendReq::GET_MAX_MEM_SLOTS) => {
                 self.check_proto_feature(VhostUserProtocolFeatures::CONFIGURE_MEM_SLOTS)?;
@@ -842,7 +847,8 @@ impl<S: VhostUserBackendReqHandler> BackendReqHandler<S> {
                 | FrontendReq::SET_BACKEND_REQ_FD
                 | FrontendReq::SET_INFLIGHT_FD
                 | FrontendReq::ADD_MEM_REG
-                | FrontendReq::SET_DEVICE_STATE_FD,
+                | FrontendReq::SET_DEVICE_STATE_FD
+                | FrontendReq::GPU_SET_SOCKET
             ) => Ok(()),
             _ if files.is_some() => Err(Error::InvalidMessage),
             _ => Ok(()),
