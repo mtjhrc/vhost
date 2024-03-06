@@ -10,6 +10,7 @@ use std::os::fd::AsFd;
 #[cfg(feature = "postcopy")]
 use std::os::fd::FromRawFd;
 use std::os::unix::io::AsRawFd;
+use std::os::unix::net::UnixStream;
 use std::sync::Arc;
 use std::thread;
 
@@ -547,6 +548,10 @@ where
         }
 
         self.backend.set_backend_req_fd(backend);
+    }
+
+    fn set_gpu_socket(&mut self, stream: UnixStream) {
+        self.backend.set_gpu_socket(stream)
     }
 
     fn get_inflight_fd(
