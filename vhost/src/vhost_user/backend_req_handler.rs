@@ -3,6 +3,7 @@
 
 use std::fs::File;
 use std::mem;
+use std::os::fd::OwnedFd;
 use std::os::unix::io::{AsRawFd, FromRawFd, IntoRawFd, RawFd};
 use std::os::unix::net::UnixStream;
 use std::slice;
@@ -65,6 +66,7 @@ pub trait VhostUserBackendReqHandler {
     fn get_config(&self, offset: u32, size: u32, flags: VhostUserConfigFlags) -> Result<Vec<u8>>;
     fn set_config(&self, offset: u32, buf: &[u8], flags: VhostUserConfigFlags) -> Result<()>;
     fn set_backend_req_fd(&self, _backend: Backend) {}
+    fn set_gpu_socket(&self, _stream: UnixStream) {}
     fn get_inflight_fd(&self, inflight: &VhostUserInflight) -> Result<(VhostUserInflight, File)>;
     fn set_inflight_fd(&self, inflight: &VhostUserInflight, file: File) -> Result<()>;
     fn get_max_mem_slots(&self) -> Result<u64>;
@@ -123,6 +125,7 @@ pub trait VhostUserBackendReqHandlerMut {
     ) -> Result<Vec<u8>>;
     fn set_config(&mut self, offset: u32, buf: &[u8], flags: VhostUserConfigFlags) -> Result<()>;
     fn set_backend_req_fd(&mut self, _backend: Backend) {}
+    fn set_gpu_socket(&mut self, _stream: UnixStream) {}
     fn get_inflight_fd(
         &mut self,
         inflight: &VhostUserInflight,
@@ -231,6 +234,10 @@ impl<T: VhostUserBackendReqHandlerMut> VhostUserBackendReqHandler for Mutex<T> {
 
     fn set_backend_req_fd(&self, backend: Backend) {
         self.lock().unwrap().set_backend_req_fd(backend)
+    }
+
+    fn set_gpu_socket(&self, stream: UnixStream) {
+        self.lock().unwrap().set_gpu_socket(stream);
     }
 
     fn get_inflight_fd(&self, inflight: &VhostUserInflight) -> Result<(VhostUserInflight, File)> {
@@ -548,10 +555,14 @@ impl<S: VhostUserBackendReqHandler> BackendReqHandler<S> {
                 let msg = self.extract_request_body::<VhostUserInflight>(&hdr, size, &buf)?;
                 let res = self.backend.set_inflight_fd(&msg, file);
                 self.send_ack_message(&hdr, res)?;
-            },
+            }
             Ok(FrontendReq::GPU_SET_SOCKET) => {
-                println!("TODO: Got GPU_SET_SOCKET: {files:?}, leaking the handle");
-                mem::forget(files.unwrap().swap_remove(0));
+                let file = take_single_file(files).ok_or(Error::InvalidMessage)?;
+                // SAFETY: Safe because we have ownership of the files that were
+                // checked when received. We have to trust that they are Unix sockets
+                // since we have no way to check this. If not, it will fail later.
+                let stream = UnixStream::from(OwnedFd::from(file));
+                self.backend.set_gpu_socket(stream);
                 self.send_ack_message(&hdr, Ok(()))?;
             }
             Ok(FrontendReq::GET_MAX_MEM_SLOTS) => {
@@ -848,7 +859,7 @@ impl<S: VhostUserBackendReqHandler> BackendReqHandler<S> {
                 | FrontendReq::SET_INFLIGHT_FD
                 | FrontendReq::ADD_MEM_REG
                 | FrontendReq::SET_DEVICE_STATE_FD
-                | FrontendReq::GPU_SET_SOCKET
+                | FrontendReq::GPU_SET_SOCKET,
             ) => Ok(()),
             _ if files.is_some() => Err(Error::InvalidMessage),
             _ => Ok(()),
