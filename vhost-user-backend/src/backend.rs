@@ -21,6 +21,7 @@
 use std::fs::File;
 use std::io::Result;
 use std::ops::Deref;
+use std::os::unix::net::UnixStream;
 use std::sync::{Arc, Mutex, RwLock};
 
 use vhost::vhost_user::message::{
@@ -83,6 +84,8 @@ pub trait VhostUserBackend: Send + Sync {
     /// A default implementation is provided as we cannot expect all backends to implement this
     /// function.
     fn set_backend_req_fd(&self, _backend: Backend) {}
+
+    fn set_gpu_socket(&self, _stream: UnixStream) {}
 
     /// Get the map to map queue index to worker thread index.
     ///
@@ -194,6 +197,8 @@ pub trait VhostUserBackendMut: Send + Sync {
     /// function.
     fn set_backend_req_fd(&mut self, _backend: Backend) {}
 
+    fn set_gpu_socket(&mut self, _stream: UnixStream) {}
+
     /// Get the map to map queue index to worker thread index.
     ///
     /// A return value of [2, 2, 4] means: the first two queues will be handled by worker thread 0,
@@ -297,6 +302,10 @@ impl<T: VhostUserBackend> VhostUserBackend for Arc<T> {
 
     fn set_backend_req_fd(&self, backend: Backend) {
         self.deref().set_backend_req_fd(backend)
+    }
+
+    fn set_gpu_socket(&self, stream: UnixStream) {
+        self.deref().set_gpu_socket(stream)
     }
 
     fn queues_per_thread(&self) -> Vec<u64> {
@@ -454,6 +463,10 @@ impl<T: VhostUserBackendMut> VhostUserBackend for RwLock<T> {
 
     fn set_backend_req_fd(&self, backend: Backend) {
         self.write().unwrap().set_backend_req_fd(backend)
+    }
+
+    fn set_gpu_socket(&self, stream: UnixStream) {
+        self.write().unwrap().set_gpu_socket(stream)
     }
 
     fn queues_per_thread(&self) -> Vec<u64> {
