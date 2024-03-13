@@ -3,6 +3,7 @@
 
 //! Traits and Structs for vhost-user backend.
 
+use crate::vhost_user::header::VhostUserMsgHeader;
 use std::sync::Arc;
 
 use super::connection::{Endpoint, Listener};
@@ -32,7 +33,7 @@ impl<S: VhostUserBackendReqHandler> BackendListener<S> {
     pub fn accept(&mut self) -> Result<Option<BackendReqHandler<S>>> {
         if let Some(fd) = self.listener.accept()? {
             return Ok(Some(BackendReqHandler::new(
-                Endpoint::<FrontendReq>::from_stream(fd),
+                Endpoint::<VhostUserMsgHeader<FrontendReq>>::from_stream(fd),
                 self.backend.take().unwrap(),
             )));
         }
