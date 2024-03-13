@@ -4,6 +4,10 @@ use std::fmt::Debug;
 use std::marker::PhantomData;
 use vm_memory::ByteValued;
 
+pub(super) trait MsgHeader: ByteValued + Default + VhostUserMsgValidator {
+    type Request: Req;
+}
+
 /// Common message header for vhost-user requests and replies.
 /// A vhost-user message consists of 3 header fields and an optional payload. All numbers are in the
 /// machine native byte order.
@@ -149,4 +153,8 @@ impl<T: Req> VhostUserMsgValidator for VhostUserMsgHeader<T> {
         }
         true
     }
+}
+
+impl<R: Req> MsgHeader for VhostUserMsgHeader<R> {
+    type Request = R;
 }
