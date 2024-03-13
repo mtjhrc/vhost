@@ -21,6 +21,7 @@
 use std::fs::File;
 use std::io::Error as IOError;
 
+mod header;
 pub mod message;
 pub use self::message::{VhostUserProtocolFeatures, VhostUserVirtioFeatures};
 

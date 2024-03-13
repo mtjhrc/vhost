@@ -1,6 +1,7 @@
 // Copyright (C) 2019-2021 Alibaba Cloud. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
+use crate::vhost_user::header::VhostUserMsgHeader;
 use std::fs::File;
 use std::mem;
 use std::os::unix::io::{AsRawFd, RawFd};

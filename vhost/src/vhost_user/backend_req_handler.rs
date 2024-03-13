@@ -9,6 +9,7 @@ use std::os::unix::net::UnixStream;
 use std::slice;
 use std::sync::{Arc, Mutex};
 
+use crate::vhost_user::header::VhostUserMsgHeader;
 use vm_memory::ByteValued;
 
 use super::backend_req::Backend;
