@@ -11,6 +11,7 @@ use super::connection::Endpoint;
 use super::message::*;
 use super::{Error, HandlerResult, Result, VhostUserFrontendReqHandler};
 
+use crate::vhost_user::header::VhostUserMsgHeader;
 use vm_memory::ByteValued;
 
 struct BackendInternal {

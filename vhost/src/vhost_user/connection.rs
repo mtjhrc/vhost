@@ -13,6 +13,7 @@ use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
 use std::{mem, slice};
 
+use crate::vhost_user::header::VhostUserMsgHeader;
 use libc::{c_void, iovec};
 use vm_memory::ByteValued;
 use vmm_sys_util::sock_ctrl_msg::ScmSocket;
