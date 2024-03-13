@@ -54,6 +54,10 @@ pub(super) trait Req:
 {
 }
 
+pub(super) trait MsgHeader: ByteValued + Copy + Default + VhostUserMsgValidator {
+    type Request: Req;
+}
+
 macro_rules! enum_value {
     (
         $(#[$meta:meta])*
@@ -253,6 +257,10 @@ pub(super) struct VhostUserMsgHeader<R: Req> {
     flags: u32,
     size: u32,
     _r: PhantomData<R>,
+}
+
+impl<R: Req> MsgHeader for VhostUserMsgHeader<R> {
+    type Request = R;
 }
 
 impl<R: Req> Debug for VhostUserMsgHeader<R> {
