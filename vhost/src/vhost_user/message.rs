@@ -87,6 +87,7 @@ macro_rules! enum_value {
         }
     }
 }
+pub(crate) use enum_value;
 
 enum_value! {
     #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
