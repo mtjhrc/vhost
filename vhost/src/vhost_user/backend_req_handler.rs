@@ -560,6 +560,12 @@ impl<S: VhostUserBackendReqHandler> BackendReqHandler<S> {
                 let res = self.backend.set_inflight_fd(&msg, file);
                 self.send_ack_message(&hdr, res)?;
             }
+            #[cfg(feature = "vhost-user-gpu-set-socket")]
+            Ok(FrontendReq::GPU_SET_SOCKET) => {
+                let res = self.set_gpu_socket(files);
+                self.send_ack_message(&hdr, res)?;
+                self.send_ack_message(&hdr, Ok(()))?;
+            }
             Ok(FrontendReq::GET_MAX_MEM_SLOTS) => {
                 self.check_proto_feature(VhostUserProtocolFeatures::CONFIGURE_MEM_SLOTS)?;
                 self.check_request_size(&hdr, size, 0)?;
@@ -796,6 +802,17 @@ impl<S: VhostUserBackendReqHandler> BackendReqHandler<S> {
         Ok(())
     }
 
+    #[cfg(feature = "vhost-user-gpu-set-socket")]
+    fn set_gpu_socket(&mut self, files: Option<Vec<File>>) -> Result<()> {
+        let file = take_single_file(files).ok_or(Error::InvalidMessage)?;
+        // SAFETY: Safe because we have ownership of the files that were
+        // checked when received. We have to trust that they are Unix sockets
+        // since we have no way to check this. If not, it will fail later.
+        let _sock = unsafe { UnixStream::from_raw_fd(file.into_raw_fd()) };
+        // TODO: pass the socket to the backend
+        Ok(())
+    }
+
     fn handle_vring_fd_request(
         &mut self,
         buf: &[u8],
@@ -865,7 +882,8 @@ impl<S: VhostUserBackendReqHandler> BackendReqHandler<S> {
                 | FrontendReq::SET_BACKEND_REQ_FD
                 | FrontendReq::SET_INFLIGHT_FD
                 | FrontendReq::ADD_MEM_REG
-                | FrontendReq::SET_DEVICE_STATE_FD,
+                | FrontendReq::SET_DEVICE_STATE_FD
+                | FrontendReq::GPU_SET_SOCKET,
             ) => Ok(()),
             _ if files.is_some() => Err(Error::InvalidMessage),
             _ => Ok(()),
