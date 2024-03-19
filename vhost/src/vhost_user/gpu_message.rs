@@ -13,7 +13,7 @@ use vm_memory::ByteValued;
 enum_value! {
     /// Type of requests sending from gpu backends to gpu frontends.
     #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
-    #[allow(non_camel_case_types)]
+    #[allow(non_camel_case_types, upper_case_acronyms)]
     pub enum GpuBackendReq: u32 {
         /// Get the supported protocol features bitmask.
         GET_PROTOCOL_FEATURES = 1,
@@ -49,7 +49,7 @@ enum_value! {
     }
 }
 
-impl Req for BackendReq {}
+impl Req for GpuBackendReq {}
 
 // Bit mask for common message flags.
 bitflags! {
@@ -97,11 +97,9 @@ impl<R: Req> PartialEq for VhostUserGpuMsgHeader<R> {
 impl<R: Req> VhostUserGpuMsgHeader<R> {
     /// Create a new instance of `VhostUserMsgHeader`.
     pub fn new(request: R, flags: u32, size: u32) -> Self {
-        // Default to protocol version 1
-        let fl = (flags & VhostUserGpuHeaderFlag::ALL_FLAGS.bits()) | 0x1;
         VhostUserGpuMsgHeader {
             request: request.into(),
-            flags: fl,
+            flags: flags, // TODO: maybe check if the flags are valid?
             size,
             _r: PhantomData,
         }
@@ -124,11 +122,6 @@ impl<R: Req> VhostUserGpuMsgHeader<R> {
         } else {
             self.flags &= !VhostUserGpuHeaderFlag::REPLY.bits();
         }
-    }
-
-    /// Check whether reply for this message is requested.
-    pub fn is_need_reply(&self) -> bool {
-        (self.flags & VhostUserGpuHeaderFlag::NEED_REPLY.bits()) != 0
     }
 
     /// Check whether it's the reply message for the request `req`.
