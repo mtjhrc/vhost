@@ -1,14 +1,14 @@
-use std::{io, mem};
-use std::os::fd::RawFd;
-use std::os::unix::net::UnixStream;
-use std::sync::{Arc, Mutex, MutexGuard};
-use vm_memory::ByteValued;
 use crate::vhost_user;
 use crate::vhost_user::connection::Endpoint;
-use crate::vhost_user::Error;
 use crate::vhost_user::gpu_message::{GpuBackendReq, VhostUserGpuMsgHeader};
 use crate::vhost_user::header::VhostUserMsgHeader;
 use crate::vhost_user::message::{BackendReq, VhostUserMsgValidator, VhostUserU64};
+use crate::vhost_user::Error;
+use std::os::fd::RawFd;
+use std::os::unix::net::UnixStream;
+use std::sync::{Arc, Mutex, MutexGuard};
+use std::{io, mem};
+use vm_memory::ByteValued;
 
 struct BackendInternal {
     sock: Endpoint<VhostUserGpuMsgHeader<GpuBackendReq>>,
@@ -39,7 +39,10 @@ impl BackendInternal {
         self.wait_for_ack(&hdr)
     }
 
-    fn wait_for_ack<V: ByteValued + Sized  + Default + VhostUserMsgValidator>(&mut self, hdr: &VhostUserGpuMsgHeader<GpuBackendReq>) -> vhost_user::Result<V> {
+    fn wait_for_ack<V: ByteValued + Sized + Default + VhostUserMsgValidator>(
+        &mut self,
+        hdr: &VhostUserGpuMsgHeader<GpuBackendReq>,
+    ) -> vhost_user::Result<V> {
         self.check_state()?;
         let (reply, body, rfds) = self.sock.recv_body::<V>()?;
         if !reply.is_reply_for(hdr) || rfds.is_some() || !body.is_valid() {
@@ -56,7 +59,7 @@ pub struct GpuBackend {
 }
 
 impl GpuBackend {
-    fn new(ep: Endpoint<VhostUserGpuMsgHeader<GpuBackendReq>> ) -> Self {
+    fn new(ep: Endpoint<VhostUserGpuMsgHeader<GpuBackendReq>>) -> Self {
         Self {
             node: Arc::new(Mutex::new(BackendInternal {
                 sock: ep,
@@ -82,9 +85,7 @@ impl GpuBackend {
 
     /// Create a new instance from a `UnixStream` object.
     pub fn from_stream(sock: UnixStream) -> Self {
-        Self::new(Endpoint::<VhostUserGpuMsgHeader<GpuBackendReq>>::from_stream(
-            sock,
-        ))
+        Self::new(Endpoint::<VhostUserGpuMsgHeader<GpuBackendReq>>::from_stream(sock))
     }
 
     /// Mark endpoint as failed with specified error code.
