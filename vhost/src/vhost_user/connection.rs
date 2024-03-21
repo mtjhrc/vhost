@@ -17,7 +17,6 @@ use libc::{c_void, iovec};
 use vm_memory::ByteValued;
 use vmm_sys_util::sock_ctrl_msg::ScmSocket;
 
-use super::header::MsgHeader;
 use super::message::*;
 use super::{Error, Result};
 
