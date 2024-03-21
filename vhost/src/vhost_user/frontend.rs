@@ -19,7 +19,6 @@ use super::{take_single_file, Error as VhostUserError, Result as VhostUserResult
 use crate::backend::{
     VhostBackend, VhostUserDirtyLogRegion, VhostUserMemoryRegionInfo, VringConfigData,
 };
-use crate::vhost_user::header::VhostUserMsgHeader;
 use crate::{Error, Result};
 
 /// Trait for vhost-user frontend to provide extra methods not covered by the VhostBackend yet.
