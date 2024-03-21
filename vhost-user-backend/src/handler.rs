@@ -9,7 +9,6 @@ use std::io;
 #[cfg(feature = "postcopy")]
 use std::os::fd::FromRawFd;
 use std::os::unix::io::AsRawFd;
-use std::os::unix::net::UnixStream;
 use std::sync::Arc;
 use std::thread;
 
@@ -21,7 +20,8 @@ use vhost::vhost_user::message::{
     VhostUserVirtioFeatures, VhostUserVringAddrFlags, VhostUserVringState,
 };
 use vhost::vhost_user::{
-    Backend, Error as VhostUserError, Result as VhostUserResult, VhostUserBackendReqHandlerMut,
+    Backend, Error as VhostUserError, GpuBackend, Result as VhostUserResult,
+    VhostUserBackendReqHandlerMut,
 };
 use virtio_bindings::bindings::virtio_ring::VIRTIO_RING_F_EVENT_IDX;
 use virtio_queue::{Error as VirtQueError, QueueT};
@@ -545,8 +545,8 @@ where
         self.backend.set_backend_req_fd(backend);
     }
 
-    fn set_gpu_socket(&mut self, stream: UnixStream) {
-        self.backend.set_gpu_socket(stream)
+    fn set_gpu_socket(&mut self, gpu_backend: GpuBackend) {
+        self.backend.set_gpu_socket(gpu_backend);
     }
 
     fn get_inflight_fd(

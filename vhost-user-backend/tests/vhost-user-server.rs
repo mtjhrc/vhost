@@ -86,6 +86,8 @@ impl VhostUserBackendMut for MockVhostBackend {
 
     fn set_backend_req_fd(&mut self, _backend: Backend) {}
 
+    fn set_gpu_socket(&mut self, _gpu_backend: GpuBackend) {}
+
     fn queues_per_thread(&self) -> Vec<u64> {
         vec![1, 1]
     }
