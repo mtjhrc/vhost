@@ -1,19 +1,16 @@
 //! Implementation parts of the protocol on the socket from VHOST_USER_SET_GPU_SOCKET
 //! see: https://www.qemu.org/docs/master/interop/vhost-user-gpu.html
 
-use crate::vhost_user::header::MsgHeader;
-use crate::vhost_user::message::{
-    enum_value, BackendReq, Req, VhostUserMsgValidator, MAX_MSG_SIZE,
-};
+use crate::vhost_user::message::{enum_value, MsgHeader, Req, VhostUserMsgValidator};
 use crate::vhost_user::Error;
 use std::fmt::Debug;
 use std::marker::PhantomData;
-use vm_memory::ByteValued;
+use vm_memory::{ByteValued, Le32, Le64};
 
 enum_value! {
     /// Type of requests sending from gpu backends to gpu frontends.
     #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
-    #[allow(non_camel_case_types, upper_case_acronyms)]
+    #[allow(non_camel_case_types)]
     pub enum GpuBackendReq: u32 {
         /// Get the supported protocol features bitmask.
         GET_PROTOCOL_FEATURES = 1,
@@ -168,3 +165,48 @@ impl<T: Req> VhostUserMsgValidator for VhostUserGpuMsgHeader<T> {
 impl<R: Req> MsgHeader for VhostUserGpuMsgHeader<R> {
     type Request = R;
 }
+
+/* data passed in the control vq, 2d related */
+
+#[derive(Copy, Clone, Debug, Default)]
+#[repr(C)]
+pub struct VirtioGpuRect {
+    pub x: Le32,
+    pub y: Le32,
+    pub width: Le32,
+    pub height: Le32,
+}
+unsafe impl ByteValued for VirtioGpuRect {}
+
+#[derive(Copy, Clone, Debug, Default)]
+#[repr(C)]
+pub struct VirtioGpuDisplayOne {
+    pub r: VirtioGpuRect,
+    pub enabled: Le32,
+    pub flags: Le32,
+}
+unsafe impl ByteValued for VirtioGpuDisplayOne {}
+
+#[derive(Copy, Clone, Debug, Default)]
+#[repr(C)]
+pub struct VirtioGpuCtrlHdr {
+    pub type_: Le32,
+    pub flags: Le32,
+    pub fence_id: Le64,
+    pub ctx_id: Le32,
+    pub ring_idx: u8,
+    pub padding: [u8; 3],
+}
+unsafe impl ByteValued for VirtioGpuCtrlHdr {}
+
+/* VIRTIO_GPU_RESP_OK_DISPLAY_INFO */
+pub const VIRTIO_GPU_MAX_SCANOUTS: usize = 16;
+#[derive(Copy, Clone, Debug, Default)]
+#[repr(C)]
+pub struct VirtioGpuRespDisplayInfo {
+    pub hdr: VirtioGpuCtrlHdr,
+    pub pmodes: [VirtioGpuDisplayOne; VIRTIO_GPU_MAX_SCANOUTS],
+}
+unsafe impl ByteValued for VirtioGpuRespDisplayInfo {}
+
+impl VhostUserMsgValidator for VirtioGpuRespDisplayInfo {}

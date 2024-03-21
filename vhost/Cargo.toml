@@ -14,7 +14,7 @@ edition = "2021"
 all-features = true
 
 [features]
-default = []
+default = ["vhost-user-gpu-set-socket"]
 test-utils = []
 vhost-vsock = []
 vhost-kern = []
