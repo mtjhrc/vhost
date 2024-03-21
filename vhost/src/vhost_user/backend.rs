@@ -3,7 +3,6 @@
 
 //! Traits and Structs for vhost-user backend.
 
-use crate::vhost_user::header::VhostUserMsgHeader;
 use std::sync::Arc;
 
 use super::connection::{Endpoint, Listener};

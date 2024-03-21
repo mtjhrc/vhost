@@ -244,6 +244,9 @@ bitflags! {
     }
 }
 
+pub(super) trait MsgHeader: ByteValued + Default + VhostUserMsgValidator {
+    type Request: Req;
+}
 /// Common message header for vhost-user requests and replies.
 /// A vhost-user message consists of 3 header fields and an optional payload. All numbers are in the
 /// machine native byte order.
@@ -388,6 +391,10 @@ impl<T: Req> VhostUserMsgValidator for VhostUserMsgHeader<T> {
         }
         true
     }
+}
+
+impl<R: Req> MsgHeader for VhostUserMsgHeader<R> {
+    type Request = R;
 }
 
 // Bit mask for transport specific flags in VirtIO feature set defined by vhost-user.
