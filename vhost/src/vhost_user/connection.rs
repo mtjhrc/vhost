@@ -226,6 +226,7 @@ impl<H: MsgHeader> Endpoint<H> {
         body: &T,
         fds: Option<&[RawFd]>,
     ) -> Result<()> {
+        println!("send message");
         if mem::size_of::<T>() > MAX_MSG_SIZE {
             return Err(Error::OversizedMsg);
         }
@@ -375,6 +376,7 @@ impl<H: MsgHeader> Endpoint<H> {
             data_total += len;
         }
 
+        println!("data total: {}", data_total);
         while (data_total - data_read) > 0 {
             let (nr_skip, offset) = get_sub_iovs_offset(&iov_lens, data_read);
             let iov = &mut iovs[nr_skip];
@@ -403,6 +405,7 @@ impl<H: MsgHeader> Endpoint<H> {
                 },
             }
         }
+        println!("data read: {}", data_read);
         Ok((data_read, rfds))
     }
 
@@ -492,6 +495,8 @@ impl<H: MsgHeader> Endpoint<H> {
 
         let total = mem::size_of::<H>() + mem::size_of::<T>();
         if bytes != total {
+            println!("bytes is: {}", bytes);
+            println!("total is: {}", total);
             return Err(Error::PartialMessage);
         } else if !hdr.is_valid() || !body.is_valid() {
             return Err(Error::InvalidMessage);
