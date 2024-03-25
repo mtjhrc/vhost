@@ -11,7 +11,7 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use std::{io, mem};
 use vm_memory::ByteValued;
 
-use super::gpu_message::{VirtioGpuGetEdid, VirtioGpuRespGetEdid};
+use super::gpu_message::VirtioGpuRespGetEdid;
 
 struct BackendInternal {
     sock: Endpoint<VhostUserGpuMsgHeader<GpuBackendReq>>,
@@ -117,7 +117,7 @@ impl GpuBackend {
     }
 
     /// Forward 2d gpu command get_edid requests to the frontend.
-    pub fn get_edid(&mut self, get_edid: &VirtioGpuGetEdid) -> io::Result<VirtioGpuRespGetEdid> {
+    pub fn get_edid(&mut self, get_edid: &u32) -> io::Result<VirtioGpuRespGetEdid> {
         self.send_message(GpuBackendReq::GET_EDID, get_edid, None)
     }
 
