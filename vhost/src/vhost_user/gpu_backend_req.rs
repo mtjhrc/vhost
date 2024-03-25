@@ -1,7 +1,7 @@
-use std::io;
 use std::os::fd::RawFd;
 use std::os::unix::net::UnixStream;
 use std::sync::{Arc, Mutex, MutexGuard};
+use std::{io, mem};
 
 use vm_memory::ByteValued;
 
@@ -34,6 +34,21 @@ impl BackendInternal {
 
         let hdr = VhostUserGpuMsgHeader::new(request, 0, 0);
         self.sock.send_header(&hdr, fds)?;
+
+        self.wait_for_ack(&hdr)
+    }
+
+    fn send_message<T: ByteValued, V: ByteValued + Sized + Default + VhostUserMsgValidator>(
+        &mut self,
+        request: GpuBackendReq,
+        body: &T,
+        fds: Option<&[RawFd]>,
+    ) -> vhost_user::Result<V> {
+        self.check_state()?;
+
+        let len = mem::size_of::<T>();
+        let hdr = VhostUserGpuMsgHeader::new(request, 0, len as u32);
+        self.sock.send_message(&hdr, body, fds)?;
 
         self.wait_for_ack(&hdr)
     }
@@ -84,10 +99,28 @@ impl GpuBackend {
             .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("{}", e)))
     }
 
+    fn send_message<T: ByteValued, V: ByteValued + Sized + Default + VhostUserMsgValidator>(
+        &self,
+        request: GpuBackendReq,
+        body: &T,
+        fds: Option<&[RawFd]>,
+    ) -> io::Result<V> {
+        self.node()
+            .send_message(request, body, fds)
+            .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("{}", e)))
+    }
+
     /// Send the VHOST_USER_GPU_GET_DISPLAY_INFO message to the frontend and wait for a reply.
     /// Get the preferred display configuration.
     pub fn get_display_info(&self) -> io::Result<VirtioGpuRespDisplayInfo> {
         self.send_header(GpuBackendReq::GET_DISPLAY_INFO, None)
+    }
+
+    /// Send the VHOST_USER_GPU_GET_EDID message to the frontend and wait for a reply.
+    /// Retrieve the EDID data for a given scanout.
+    /// This message requires the VHOST_USER_GPU_PROTOCOL_F_EDID protocol feature to be supported.
+    pub fn get_edid(&self, get_edid: &VhostUserGpuEdidRequest) -> io::Result<VirtioGpuRespGetEdid> {
+        self.send_message(GpuBackendReq::GET_EDID, get_edid, None)
     }
 
     /// Create a new instance from a `UnixStream` object.
