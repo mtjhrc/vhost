@@ -15,34 +15,36 @@ enum_value! {
         /// Get the supported protocol features bitmask.
         GET_PROTOCOL_FEATURES = 1,
         /// Enable protocol features using a bitmask.
-        SET_PROTOCOL_FEATURES,
+        SET_PROTOCOL_FEATURES = 2,
         /// Get the preferred display configuration.
-        GET_DISPLAY_INFO,
+        GET_DISPLAY_INFO = 3,
         /// Set/show the cursor position.
-        CURSOR_POS,
+        CURSOR_POS = 4,
         /// Set/hide the cursor.
-        CURSOR_POS_HIDE,
+        CURSOR_POS_HIDE = 5,
+        /// Set/show the cursor position update.
+        CURSOR_POS_UPDATE = 6,
         /// Set the scanout resolution.
         /// To disable a scanout, the dimensions width/height are set to 0.
-        SCANOUT,
+        SCANOUT = 7,
         /// Update the scanout content. The data payload contains the graphical bits.
         /// The display should be flushed and presented.
-        UPDATE,
+        UPDATE = 8,
         /// Set the scanout resolution/configuration, and share a DMABUF file descriptor for the scanout content,
         /// which is passed as ancillary data.
         /// To disable a scanout, the dimensions width/height are set to 0, there is no file descriptor passed.
-        DMABUF_SCANOUT,
+        DMABUF_SCANOUT = 9,
         /// The display should be flushed and presented according to updated region from VhostUserGpuUpdate.
         // Note: there is no data payload, since the scanout is shared thanks to DMABUF,
         // that must have been set previously with VHOST_USER_GPU_DMABUF_SCANOUT.
-        DMABUF_UPDATE,
+        DMABUF_UPDATE = 10,
         /// Retrieve the EDID data for a given scanout.
         /// This message requires the VHOST_USER_GPU_PROTOCOL_F_EDID protocol feature to be supported.
-        GET_EDID,
+        GET_EDID = 11,
         /// Same as VHOST_USER_GPU_DMABUF_SCANOUT, but also sends the dmabuf modifiers appended to the message,
         /// which were not provided in the other message.
         /// This message requires the VHOST_USER_GPU_PROTOCOL_F_DMABUF2 protocol feature to be supported.
-        VHOST_USER_GPU_DMABUF_SCANOUT2,
+        VHOST_USER_GPU_DMABUF_SCANOUT2 = 12,
     }
 }
 
@@ -236,20 +238,16 @@ unsafe impl ByteValued for VirtioGpuRespDisplayInfo {}
 impl VhostUserMsgValidator for VirtioGpuRespDisplayInfo {}
 
 /// Retrieve the EDID data for a given scanout
-/// Request data is struct VirtioGpuGetEdid
+/// Request data is struct VhostUserGpuEdidRequest
 #[derive(Copy, Clone, Debug, Default)]
 #[repr(C)]
-pub struct VirtioGpuGetEdid {
-    /// The fixed header struct
-    pub hdr: VirtioGpuCtrlHdr,
+pub struct VhostUserGpuEdidRequest {
     /// scanout information
-    pub scanout: u32,
-    /// padding of the structure
-    pub padding: u32,
+    pub scanout_id: u32,
 }
-unsafe impl ByteValued for VirtioGpuGetEdid {}
+unsafe impl ByteValued for VhostUserGpuEdidRequest {}
 
-impl VhostUserMsgValidator for VirtioGpuGetEdid {}
+impl VhostUserMsgValidator for VhostUserGpuEdidRequest {}
 
 /* VIRTIO_GPU_RESP_OK_EDID */
 /// Response type is VIRTIO_GPU_RESP_OK_EDID
