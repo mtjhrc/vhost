@@ -5,7 +5,7 @@ use crate::vhost_user::message::{enum_value, MsgHeader, Req, VhostUserMsgValidat
 use crate::vhost_user::Error;
 use std::fmt::Debug;
 use std::marker::PhantomData;
-use vm_memory::{ByteValued, Le32, Le64};
+use vm_memory::ByteValued;
 
 enum_value! {
     /// Type of requests sending from gpu backends to gpu frontends.
@@ -168,45 +168,114 @@ impl<R: Req> MsgHeader for VhostUserGpuMsgHeader<R> {
 
 /* data passed in the control vq, 2d related */
 
+/// The rectangle represents the portion of the blob resource being displayed.
 #[derive(Copy, Clone, Debug, Default)]
 #[repr(C)]
 pub struct VirtioGpuRect {
-    pub x: Le32,
-    pub y: Le32,
-    pub width: Le32,
-    pub height: Le32,
+    /// The position field x describe how the displays are arranged
+    pub x: u32,
+    /// The position field y describe how the displays are arranged
+    pub y: u32,
+    /// The size field width
+    pub width: u32,
+    /// The size field height
+    pub height: u32,
 }
 unsafe impl ByteValued for VirtioGpuRect {}
 
+/// The Structure of virtio_gpu_display_one
 #[derive(Copy, Clone, Debug, Default)]
 #[repr(C)]
 pub struct VirtioGpuDisplayOne {
+    /// The structure of the rectangle
     pub r: VirtioGpuRect,
-    pub enabled: Le32,
-    pub flags: Le32,
+    /// The enabled field is set when the user enabled the display.
+    pub enabled: u32,
+    /// The display flag
+    pub flags: u32,
 }
 unsafe impl ByteValued for VirtioGpuDisplayOne {}
 
+/// The fixed header struct virtio_gpu_ctrl_hdr in each request
 #[derive(Copy, Clone, Debug, Default)]
 #[repr(C)]
 pub struct VirtioGpuCtrlHdr {
-    pub type_: Le32,
-    pub flags: Le32,
-    pub fence_id: Le64,
-    pub ctx_id: Le32,
+    /// Specifies the type of the driver request (VIRTIO_GPU_CMD_*)
+    /// or device response (VIRTIO_GPU_RESP_*).
+    pub type_: u32,
+    /// Request / response flags.
+    pub flags: u32,
+    /// Set VIRTIO_GPU_FLAG_FENCE bit in the response
+    pub fence_id: u64,
+    /// Rendering context (used in 3D mode only).
+    pub ctx_id: u32,
+    /// ring_idx indicates the value of a context-specific ring index.
+    /// The minimum value is 0 and maximum value is 63 (inclusive).
     pub ring_idx: u8,
+    /// padding of the structure
     pub padding: [u8; 3],
 }
 unsafe impl ByteValued for VirtioGpuCtrlHdr {}
 
-/* VIRTIO_GPU_RESP_OK_DISPLAY_INFO */
+/// VIRTIO_GPU_MAX_SCANOUTS data
 pub const VIRTIO_GPU_MAX_SCANOUTS: usize = 16;
+
+/* VIRTIO_GPU_RESP_OK_DISPLAY_INFO */
+///The response contains a list of per-scanout information.
 #[derive(Copy, Clone, Debug, Default)]
 #[repr(C)]
 pub struct VirtioGpuRespDisplayInfo {
+    /// The fixed header struct
     pub hdr: VirtioGpuCtrlHdr,
+    /// pmodes contains whether the scanout is enabled and what
+    /// its preferred position and size is
     pub pmodes: [VirtioGpuDisplayOne; VIRTIO_GPU_MAX_SCANOUTS],
 }
 unsafe impl ByteValued for VirtioGpuRespDisplayInfo {}
 
 impl VhostUserMsgValidator for VirtioGpuRespDisplayInfo {}
+
+/// Retrieve the EDID data for a given scanout
+/// Request data is struct VirtioGpuGetEdid
+#[derive(Copy, Clone, Debug, Default)]
+#[repr(C)]
+pub struct VirtioGpuGetEdid {
+    /// The fixed header struct
+    pub hdr: VirtioGpuCtrlHdr,
+    /// scanout information
+    pub scanout: u32,
+    /// padding of the structure
+    pub padding: u32,
+}
+unsafe impl ByteValued for VirtioGpuGetEdid {}
+
+impl VhostUserMsgValidator for VirtioGpuGetEdid {}
+
+/* VIRTIO_GPU_RESP_OK_EDID */
+/// Response type is VIRTIO_GPU_RESP_OK_EDID
+#[derive(Copy, Clone, Debug)]
+#[repr(C)]
+pub struct VirtioGpuRespGetEdid {
+    /// The fixed header struct
+    pub hdr: VirtioGpuCtrlHdr,
+    /// size of the structure containing information
+    pub size: u32,
+    /// padding of the structure
+    pub padding: u32,
+    /// The EDID display data blob (as specified by VESA) for the scanout.
+    pub edid: [u8; 1024],
+}
+unsafe impl ByteValued for VirtioGpuRespGetEdid {}
+
+impl Default for VirtioGpuRespGetEdid {
+    fn default() -> Self {
+        VirtioGpuRespGetEdid {
+            hdr: VirtioGpuCtrlHdr::default(),
+            size: u32::default(),
+            padding: u32::default(),
+            edid: [0; 1024], // Default value for the edid array (filled with zeros)
+        }
+    }
+}
+
+impl VhostUserMsgValidator for VirtioGpuRespGetEdid {}

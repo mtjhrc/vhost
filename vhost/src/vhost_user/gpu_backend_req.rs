@@ -11,6 +11,8 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use std::{io, mem};
 use vm_memory::ByteValued;
 
+use super::gpu_message::{VirtioGpuGetEdid, VirtioGpuRespGetEdid};
+
 struct BackendInternal {
     sock: Endpoint<VhostUserGpuMsgHeader<GpuBackendReq>>,
     // whether the endpoint has encountered any failure
@@ -32,16 +34,13 @@ impl BackendInternal {
     ) -> vhost_user::Result<V> {
         self.check_state()?;
 
-        //investigate what len should be
-        let _len = mem::size_of::<VirtioGpuRespDisplayInfo>();
-
         let hdr = VhostUserGpuMsgHeader::new(request, 0, 0);
         self.sock.send_header(&hdr, fds)?;
 
         self.wait_for_ack(&hdr)
     }
 
-    fn _send_message<T: ByteValued, V: ByteValued + Sized + Default + VhostUserMsgValidator>(
+    fn send_message<T: ByteValued, V: ByteValued + Sized + Default + VhostUserMsgValidator>(
         &mut self,
         request: GpuBackendReq,
         body: &T,
@@ -49,6 +48,7 @@ impl BackendInternal {
     ) -> vhost_user::Result<V> {
         self.check_state()?;
 
+        //investigate what len should be
         let len = mem::size_of::<T>();
         let hdr = VhostUserGpuMsgHeader::new(request, 0, len as u32);
         self.sock.send_message(&hdr, body, fds)?;
@@ -100,14 +100,14 @@ impl GpuBackend {
             .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("{}", e)))
     }
 
-    fn _send_message<T: ByteValued, V: ByteValued + Sized + Default + VhostUserMsgValidator>(
+    fn send_message<T: ByteValued, V: ByteValued + Sized + Default + VhostUserMsgValidator>(
         &self,
         request: GpuBackendReq,
         body: &T,
         fds: Option<&[RawFd]>,
     ) -> io::Result<V> {
         self.node()
-            ._send_message(request, body, fds)
+            .send_message(request, body, fds)
             .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("{}", e)))
     }
 
@@ -117,9 +117,9 @@ impl GpuBackend {
     }
 
     /// Forward 2d gpu command get_edid requests to the frontend.
-    // fn get_edid(&self) -> HandlerResult<u64> {
-    //     self.node().send_header(GpuBackendReq::GET_EDID, None)
-    // }
+    pub fn get_edid(&mut self, get_edid: &VirtioGpuGetEdid) -> io::Result<VirtioGpuRespGetEdid> {
+        self.send_message(GpuBackendReq::GET_EDID, get_edid, None)
+    }
 
     /// Create a new instance from a `UnixStream` object.
     pub fn from_stream(sock: UnixStream) -> Self {
