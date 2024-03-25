@@ -49,7 +49,8 @@ pub const VHOST_USER_CONFIG_SIZE: u32 = 0x1000;
 /// Maximum number of vrings supported.
 pub const VHOST_USER_MAX_VRINGS: u64 = 0x8000u64;
 
-pub(super) trait Req:
+/// Add Documentation for the Req Trait.
+pub trait Req:
     Clone + Copy + Debug + PartialEq + Eq + PartialOrd + Ord + Send + Sync + Into<u32> + TryFrom<u32>
 {
 }
@@ -88,6 +89,7 @@ macro_rules! enum_value {
         }
     }
 }
+pub(crate) use enum_value;
 
 enum_value! {
     #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -243,6 +245,9 @@ bitflags! {
     }
 }
 
+pub(super) trait MsgHeader: ByteValued + Default + VhostUserMsgValidator {
+    type Request: Req;
+}
 /// Common message header for vhost-user requests and replies.
 /// A vhost-user message consists of 3 header fields and an optional payload. All numbers are in the
 /// machine native byte order.
@@ -387,6 +392,10 @@ impl<T: Req> VhostUserMsgValidator for VhostUserMsgHeader<T> {
         }
         true
     }
+}
+
+impl<R: Req> MsgHeader for VhostUserMsgHeader<R> {
+    type Request = R;
 }
 
 // Bit mask for transport specific flags in VirtIO feature set defined by vhost-user.

@@ -14,7 +14,7 @@ edition = "2021"
 all-features = true
 
 [features]
-default = []
+default = ["vhost-user-gpu-set-socket"]
 test-utils = []
 vhost-vsock = []
 vhost-kern = []
@@ -23,6 +23,7 @@ vhost-net = ["vhost-kern"]
 vhost-user = []
 vhost-user-frontend = ["vhost-user"]
 vhost-user-backend = ["vhost-user"]
+vhost-user-gpu-set-socket = ["vhost-user", "vhost-user-backend"]
 xen = ["vm-memory/xen"]
 postcopy = []
 
