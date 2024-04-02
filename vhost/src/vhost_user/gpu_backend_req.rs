@@ -11,7 +11,7 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use std::{io, mem};
 use vm_memory::ByteValued;
 
-use super::gpu_message::VirtioGpuRespGetEdid;
+use super::gpu_message::{VhostUserGpuEdidRequest, VhostUserGpuScanout, VirtioGpuRespGetEdid};
 
 struct BackendInternal {
     sock: Endpoint<VhostUserGpuMsgHeader<GpuBackendReq>>,
@@ -38,6 +38,21 @@ impl BackendInternal {
         self.sock.send_header(&hdr, fds)?;
 
         self.wait_for_ack(&hdr)
+    }
+
+    fn send_message_no_reply<T: ByteValued>(
+        &mut self,
+        request: GpuBackendReq,
+        body: &T,
+        fds: Option<&[RawFd]>,
+    ) -> vhost_user::Result<()> {
+        self.check_state()?;
+
+        //investigate what len should be
+        let len = mem::size_of::<T>();
+        let hdr = VhostUserGpuMsgHeader::new(request, 0, len as u32);
+        self.sock.send_message(&hdr, body, fds)?;
+        Ok(())
     }
 
     fn send_message<T: ByteValued, V: ByteValued + Sized + Default + VhostUserMsgValidator>(
@@ -111,14 +126,34 @@ impl GpuBackend {
             .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("{}", e)))
     }
 
+    fn send_message_no_reply<T: ByteValued>(
+        &self,
+        request: GpuBackendReq,
+        body: &T,
+        fds: Option<&[RawFd]>,
+    ) -> io::Result<()> {
+        self.node()
+            .send_message_no_reply(request, body, fds)
+            .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("{}", e)))
+    }
+
     /// Forward 2d gpu command get_display_info requests to the frontend.
     pub fn get_display_info(&mut self) -> io::Result<VirtioGpuRespDisplayInfo> {
         self.send_header(GpuBackendReq::GET_DISPLAY_INFO, None)
     }
 
     /// Forward 2d gpu command get_edid requests to the frontend.
-    pub fn get_edid(&mut self, get_edid: &u32) -> io::Result<VirtioGpuRespGetEdid> {
-        self.send_message(GpuBackendReq::GET_EDID, get_edid, None)
+    pub fn get_edid(
+        &mut self,
+        get_edid: &VhostUserGpuEdidRequest,
+    ) -> io::Result<VirtioGpuRespGetEdid> {
+        self.send_message(GpuBackendReq::GET_EDID, &get_edid.scanout_id, None)
+    }
+
+    /// Forward 2d gpu command SetScanout requests to the frontend.
+    pub fn set_scanout(&mut self, scanout: &VhostUserGpuScanout) -> io::Result<()> {
+        self.send_message_no_reply(GpuBackendReq::SCANOUT, scanout, None)
+            .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("{}", e)))
     }
 
     /// Create a new instance from a `UnixStream` object.
