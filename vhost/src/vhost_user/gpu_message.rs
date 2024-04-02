@@ -249,6 +249,22 @@ unsafe impl ByteValued for VhostUserGpuEdidRequest {}
 
 impl VhostUserMsgValidator for VhostUserGpuEdidRequest {}
 
+/// Set the scanout resolution.
+/// Data is struct VhostUserGpuScanout
+#[derive(Copy, Clone, Debug, Default)]
+#[repr(C)]
+pub struct VhostUserGpuScanout {
+    /// scanout information
+    pub scanout_id: u32,
+    /// scanout width size
+    pub width: u32,
+    /// scanout height size
+    pub height: u32,
+}
+unsafe impl ByteValued for VhostUserGpuScanout {}
+
+impl VhostUserMsgValidator for VhostUserGpuScanout {}
+
 /* VIRTIO_GPU_RESP_OK_EDID */
 /// Response type is VIRTIO_GPU_RESP_OK_EDID
 #[derive(Copy, Clone, Debug)]
