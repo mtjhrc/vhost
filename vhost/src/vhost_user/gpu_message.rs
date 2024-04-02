@@ -276,9 +276,6 @@ pub struct VirtioGpuRespGetEdid {
     pub edid: [u8; 1024],
 }
 
-// SAFETY: Safe because all fields are POD.
-unsafe impl ByteValued for VirtioGpuRespGetEdid {}
-
 impl Default for VirtioGpuRespGetEdid {
     fn default() -> Self {
         VirtioGpuRespGetEdid {
@@ -290,4 +287,24 @@ impl Default for VirtioGpuRespGetEdid {
     }
 }
 
+// SAFETY: Safe because all fields are POD.
+unsafe impl ByteValued for VirtioGpuRespGetEdid {}
+
 impl VhostUserMsgValidator for VirtioGpuRespGetEdid {}
+
+/// The VhostUserGpuScanout from the QEMU vhost-user-gpu specification.
+#[derive(Copy, Clone, Debug, Default)]
+#[repr(C)]
+pub struct VhostUserGpuScanout {
+    /// The id of the scanout
+    pub scanout_id: u32,
+    /// The scanout width
+    pub width: u32,
+    /// The scanout height
+    pub height: u32,
+}
+
+// SAFETY: Safe because all fields are POD.
+unsafe impl ByteValued for VhostUserGpuScanout {}
+
+impl VhostUserMsgValidator for VhostUserGpuScanout {}
