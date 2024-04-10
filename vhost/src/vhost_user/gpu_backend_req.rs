@@ -1,11 +1,54 @@
-use crate::vhost_user::connection::Endpoint;
-use crate::vhost_user::gpu_message::{GpuBackendReq, VhostUserGpuMsgHeader};
+use std::io;
+use std::os::fd::RawFd;
 use std::os::unix::net::UnixStream;
 use std::sync::{Arc, Mutex, MutexGuard};
 
+use vm_memory::ByteValued;
+
+use crate::vhost_user;
+use crate::vhost_user::connection::Endpoint;
+use crate::vhost_user::gpu_message::*;
+use crate::vhost_user::message::VhostUserMsgValidator;
+use crate::vhost_user::Error;
+
 struct BackendInternal {
+    sock: Endpoint<VhostUserGpuMsgHeader<GpuBackendReq>>,
     // whether the endpoint has encountered any failure
     error: Option<i32>,
+}
+
+impl BackendInternal {
+    fn check_state(&self) -> vhost_user::Result<u64> {
+        match self.error {
+            Some(e) => Err(Error::SocketBroken(io::Error::from_raw_os_error(e))),
+            None => Ok(0),
+        }
+    }
+
+    fn send_header<V: ByteValued + Sized + Default + VhostUserMsgValidator>(
+        &mut self,
+        request: GpuBackendReq,
+        fds: Option<&[RawFd]>,
+    ) -> vhost_user::Result<V> {
+        self.check_state()?;
+
+        let hdr = VhostUserGpuMsgHeader::new(request, 0, 0);
+        self.sock.send_header(&hdr, fds)?;
+
+        self.wait_for_ack(&hdr)
+    }
+
+    fn wait_for_ack<V: ByteValued + Sized + Default + VhostUserMsgValidator>(
+        &mut self,
+        hdr: &VhostUserGpuMsgHeader<GpuBackendReq>,
+    ) -> vhost_user::Result<V> {
+        self.check_state()?;
+        let (reply, body, rfds) = self.sock.recv_body::<V>()?;
+        if !reply.is_reply_for(hdr) || rfds.is_some() || !body.is_valid() {
+            return Err(Error::InvalidMessage);
+        }
+        Ok(body)
+    }
 }
 
 /// Proxy for sending messages from the backend to the fronted
@@ -18,14 +61,33 @@ pub struct GpuBackend {
 }
 
 impl GpuBackend {
-    fn new(_ep: Endpoint<VhostUserGpuMsgHeader<GpuBackendReq>>) -> Self {
+    fn new(ep: Endpoint<VhostUserGpuMsgHeader<GpuBackendReq>>) -> Self {
         Self {
-            node: Arc::new(Mutex::new(BackendInternal { error: None })),
+            node: Arc::new(Mutex::new(BackendInternal {
+                sock: ep,
+                error: None,
+            })),
         }
     }
 
     fn node(&self) -> MutexGuard<BackendInternal> {
         self.node.lock().unwrap()
+    }
+
+    fn send_header<V: ByteValued + Sized + Default + VhostUserMsgValidator>(
+        &self,
+        request: GpuBackendReq,
+        fds: Option<&[RawFd]>,
+    ) -> io::Result<V> {
+        self.node()
+            .send_header(request, fds)
+            .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("{}", e)))
+    }
+
+    /// Send the VHOST_USER_GPU_GET_DISPLAY_INFO message to the frontend and wait for a reply.
+    /// Get the preferred display configuration.
+    pub fn get_display_info(&self) -> io::Result<VirtioGpuRespDisplayInfo> {
+        self.send_header(GpuBackendReq::GET_DISPLAY_INFO, None)
     }
 
     /// Create a new instance from a `UnixStream` object.
