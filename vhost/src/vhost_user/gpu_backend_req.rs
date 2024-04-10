@@ -52,6 +52,20 @@ impl BackendInternal {
         Ok(())
     }
 
+    fn send_message_oversized_no_reply<T: ByteValued>(
+        &mut self,
+        request: GpuBackendReq,
+        body: &T,
+        fds: Option<&[RawFd]>,
+    ) -> vhost_user::Result<()> {
+        self.check_state()?;
+
+        let len = mem::size_of::<T>();
+        let hdr = VhostUserGpuMsgHeader::new(request, 0, len as u32);
+        self.sock.send_message_oversized(&hdr, body, fds)?;
+        Ok(())
+    }
+
     fn send_message_oversized_with_payload_no_reply<T: ByteValued>(
         &mut self,
         request: GpuBackendReq,
@@ -151,6 +165,17 @@ impl GpuBackend {
             .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("{}", e)))
     }
 
+    fn send_message_oversized_no_reply<T: ByteValued>(
+        &self,
+        request: GpuBackendReq,
+        body: &T,
+        fds: Option<&[RawFd]>,
+    ) -> io::Result<()> {
+        self.node()
+            .send_message_oversized_no_reply(request, body, fds)
+            .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("{}", e)))
+    }
+
     fn send_message_oversized_with_payload_no_reply<T: ByteValued>(
         &self,
         request: GpuBackendReq,
@@ -220,6 +245,24 @@ impl GpuBackend {
     /// from VhostUserGpuUpdate.
     pub fn update_dmabuf_scanout(&self, update: &VhostUserGpuUpdate) -> io::Result<()> {
         self.send_message_no_reply(GpuBackendReq::DMABUF_UPDATE, update, None)
+    }
+
+    /// Send the VHOST_USER_GPU_CURSOR_POS  message to the frontend. Doesn't wait for a reply.
+    /// Set/show the cursor position.
+    pub fn cursor_pos(&self, cursor_pos: &VhostUserGpuCursorPos) -> io::Result<()> {
+        self.send_message_no_reply(GpuBackendReq::CURSOR_POS, cursor_pos, None)
+    }
+
+    /// Send the VHOST_USER_GPU_CURSOR_POS_HIDE  message to the frontend. Doesn't wait for a reply.
+    /// Set/hide the cursor.
+    pub fn cursor_pos_hide(&self, cursor_pos: &VhostUserGpuCursorPos) -> io::Result<()> {
+        self.send_message_no_reply(GpuBackendReq::CURSOR_POS_HIDE, cursor_pos, None)
+    }
+
+    /// Send the VHOST_USER_GPU_CURSOR_UPDATE  message to the frontend. Doesn't wait for a reply.
+    /// Update the cursor shape and location.
+    pub fn cursor_update(&self, cursor_update: &VhostUserGpuCursorUpdate) -> io::Result<()> {
+        self.send_message_oversized_no_reply(GpuBackendReq::CURSOR_UPDATE, cursor_update, None)
     }
 
     /// Create a new instance from a `UnixStream` object.

@@ -236,6 +236,31 @@ impl<H: MsgHeader> Endpoint<H> {
         Ok(())
     }
 
+    /// Send a message with header and body. Optional file descriptors may be attached to
+    /// the message.
+    ///
+    /// # Return:
+    /// * - number of bytes sent on success
+    /// * - SocketRetry: temporary error caused by signals or short of resources.
+    /// * - SocketBroken: the underline socket is broken.
+    /// * - SocketError: other socket related errors.
+    /// * - PartialMessage: received a partial message.
+    pub fn send_message_oversized<T: ByteValued>(
+        &mut self,
+        hdr: &H,
+        body: &T,
+        fds: Option<&[RawFd]>,
+    ) -> Result<()> {
+        if mem::size_of::<T>() > MAX_OVERSIZED_MSG_SIZE {
+            return Err(Error::OversizedMsg);
+        }
+        let bytes = self.send_iovec_all(&[hdr.as_slice(), body.as_slice()], fds)?;
+        if bytes != mem::size_of::<H>() + mem::size_of::<T>() {
+            return Err(Error::PartialMessage);
+        }
+        Ok(())
+    }
+
     /// Send a message with header, body and payload. Optional file descriptors
     /// may also be attached to the message.
     ///
