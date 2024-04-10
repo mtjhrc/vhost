@@ -225,6 +225,34 @@ impl GpuBackend {
         self.send_message_no_reply(GpuBackendReq::DMABUF_UPDATE, update, None)
     }
 
+    /// Send the VHOST_USER_GPU_CURSOR_POS  message to the frontend. Doesn't wait for a reply.
+    /// Set/show the cursor position.
+    pub fn cursor_pos(&self, cursor_pos: &VhostUserGpuCursorPos) -> io::Result<()> {
+        self.send_message_no_reply(GpuBackendReq::CURSOR_POS, cursor_pos, None)
+    }
+
+    /// Send the VHOST_USER_GPU_CURSOR_POS_HIDE  message to the frontend. Doesn't wait for a reply.
+    /// Set/hide the cursor.
+    pub fn cursor_pos_hide(&self, cursor_pos: &VhostUserGpuCursorPos) -> io::Result<()> {
+        self.send_message_no_reply(GpuBackendReq::CURSOR_POS_HIDE, cursor_pos, None)
+    }
+
+    /// Send the VHOST_USER_GPU_CURSOR_UPDATE  message to the frontend. Doesn't wait for a reply.
+    /// Update the cursor shape and location.
+    /// `data` represents a 64*64 cursor image (PIXMAN_x8r8g8b8 format).
+    pub fn cursor_update(
+        &self,
+        cursor_update: &VhostUserGpuCursorUpdate,
+        data: &[u8; 4 * 64 * 64],
+    ) -> io::Result<()> {
+        self.send_message_with_payload_no_reply(
+            GpuBackendReq::CURSOR_UPDATE,
+            cursor_update,
+            data,
+            None,
+        )
+    }
+
     /// Create a new instance from a `UnixStream` object.
     pub fn from_stream(sock: UnixStream) -> Self {
         Self::new(Endpoint::<VhostUserGpuMsgHeader<GpuBackendReq>>::from_stream(sock))
