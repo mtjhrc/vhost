@@ -11,7 +11,7 @@ use vm_memory::ByteValued;
 use crate::vhost_user;
 use crate::vhost_user::connection::Endpoint;
 use crate::vhost_user::gpu_message::*;
-use crate::vhost_user::message::VhostUserMsgValidator;
+use crate::vhost_user::message::{VhostUserMsgValidator, VhostUserU64};
 use crate::vhost_user::Error;
 
 struct BackendInternal {
@@ -163,6 +163,19 @@ impl GpuBackend {
         self.node()
             .send_message_with_payload_no_reply(request, body, data, fds)
             .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("{}", e)))
+    }
+
+    /// Send the VHOST_USER_GPU_GET_PROTOCOL_FEATURES message to the frontend and wait for a reply.
+    /// Get the supported protocol features bitmask.
+    pub fn get_protocol_features(&self) -> io::Result<VhostUserU64> {
+        self.send_header(GpuBackendReq::GET_PROTOCOL_FEATURES, None)
+    }
+
+    /// Send the VHOST_USER_GPU_SET_PROTOCOL_FEATURES message to the frontend. Doesn't wait for
+    /// a reply.
+    /// Enable protocol features using a bitmask.
+    pub fn set_protocol_features(&self, msg: &VhostUserU64) -> io::Result<()> {
+        self.send_message_no_reply(GpuBackendReq::SET_PROTOCOL_FEATURES, msg, None)
     }
 
     /// Send the VHOST_USER_GPU_GET_DISPLAY_INFO message to the frontend and wait for a reply.
