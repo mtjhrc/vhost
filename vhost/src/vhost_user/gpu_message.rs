@@ -265,6 +265,56 @@ unsafe impl ByteValued for VhostUserGpuScanout {}
 
 impl VhostUserMsgValidator for VhostUserGpuScanout {}
 
+/// Set the scanout resolution.
+/// Data is struct VhostUserGpuDMABUFScanout
+#[derive(Copy, Clone, Debug, Default)]
+#[repr(C)]
+pub struct VhostUserGpuDMABUFScanout {
+    /// scanout information
+    pub scanout_id: u32,
+    /// The position field x of the scanout within the DMABUF
+    pub x: u32,
+    /// The position field y of the scanout within the DMABUF
+    pub y: u32,
+    /// scanout width size
+    pub width: u32,
+    /// scanout height size
+    pub height: u32,
+    /// the DMABUF width
+    pub fd_width: u32,
+    /// the DMABUF height
+    pub fd_height: u32,
+    /// the DMABUF stride
+    pub fd_stride: u32,
+    /// the DMABUF flags
+    pub fd_flags: u32,
+    /// the DMABUF fourcc
+    pub fd_drm_fourcc: u32,
+}
+unsafe impl ByteValued for VhostUserGpuDMABUFScanout {}
+
+impl VhostUserMsgValidator for VhostUserGpuDMABUFScanout {}
+
+/// Update the scanout content.
+/// Data is struct VhostUserGpuUpdate
+#[derive(Copy, Clone, Debug, Default)]
+#[repr(C)]
+pub struct VhostUserGpuUpdate {
+    /// scanout content to update
+    pub scanout_id: u32,
+    /// The position field x of the scanout update
+    pub x: u32,
+    /// The position field y of the scanout update
+    pub y: u32,
+    /// scanout updated width size
+    pub width: u32,
+    /// scanout updated height size
+    pub height: u32,
+}
+unsafe impl ByteValued for VhostUserGpuUpdate {}
+
+impl VhostUserMsgValidator for VhostUserGpuUpdate {}
+
 /* VIRTIO_GPU_RESP_OK_EDID */
 /// Response type is VIRTIO_GPU_RESP_OK_EDID
 #[derive(Copy, Clone, Debug)]
