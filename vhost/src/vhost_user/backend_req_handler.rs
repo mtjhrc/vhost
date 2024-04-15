@@ -568,14 +568,8 @@ impl<S: VhostUserBackendReqHandler> BackendReqHandler<S> {
                 self.send_ack_message(&hdr, res)?;
             }
             Ok(FrontendReq::GPU_SET_SOCKET) => {
-                let file = take_single_file(files).ok_or(Error::InvalidMessage)?;
-                // SAFETY: Safe because we have ownership of the files that were
-                // checked when received. We have to trust that they are Unix sockets
-                // since we have no way to check this. If not, it will fail later.
-                let sock = unsafe { UnixStream::from_raw_fd(file.into_raw_fd()) };
-                let gpu_backend = GpuBackend::from_stream(sock);
-                self.backend.set_gpu_socket(gpu_backend);
-                self.send_ack_message(&hdr, Ok(()))?;
+                let res = self.set_gpu_socket(files);
+                self.send_ack_message(&hdr, res)?;
             }
             Ok(FrontendReq::GET_MAX_MEM_SLOTS) => {
                 self.check_proto_feature(VhostUserProtocolFeatures::CONFIGURE_MEM_SLOTS)?;
@@ -810,6 +804,16 @@ impl<S: VhostUserBackendReqHandler> BackendReqHandler<S> {
         let sock = unsafe { UnixStream::from_raw_fd(file.into_raw_fd()) };
         let backend = Backend::from_stream(sock);
         self.backend.set_backend_req_fd(backend);
+        Ok(())
+    }
+    fn set_gpu_socket(&mut self, files: Option<Vec<File>>) -> Result<()> {
+        let file = take_single_file(files).ok_or(Error::InvalidMessage)?;
+        // SAFETY: Safe because we have ownership of the files that were
+        // checked when received. We have to trust that they are Unix sockets
+        // since we have no way to check this. If not, it will fail later.
+        let sock = unsafe { UnixStream::from_raw_fd(file.into_raw_fd()) };
+        let gpu_backend = GpuBackend::from_stream(sock);
+        self.backend.set_gpu_socket(gpu_backend);
         Ok(())
     }
 

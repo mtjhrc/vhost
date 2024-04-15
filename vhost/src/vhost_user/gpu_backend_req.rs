@@ -5,13 +5,16 @@ use crate::vhost_user::gpu_message::{
 };
 use crate::vhost_user::message::VhostUserMsgValidator;
 use crate::vhost_user::Error;
-use std::os::fd::RawFd;
+use std::os::fd::{AsRawFd, RawFd};
 use std::os::unix::net::UnixStream;
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::{io, mem};
 use vm_memory::ByteValued;
 
-use super::gpu_message::{VhostUserGpuEdidRequest, VhostUserGpuScanout, VirtioGpuRespGetEdid};
+use super::gpu_message::{
+    VhostUserGpuDMABUFScanout, VhostUserGpuEdidRequest, VhostUserGpuScanout, VhostUserGpuUpdate,
+    VirtioGpuRespGetEdid,
+};
 
 struct BackendInternal {
     sock: Endpoint<VhostUserGpuMsgHeader<GpuBackendReq>>,
@@ -52,6 +55,21 @@ impl BackendInternal {
         let len = mem::size_of::<T>();
         let hdr = VhostUserGpuMsgHeader::new(request, 0, len as u32);
         self.sock.send_message(&hdr, body, fds)?;
+        Ok(())
+    }
+
+    fn send_message_with_payload<T: ByteValued>(
+        &mut self,
+        request: GpuBackendReq,
+        body: &T,
+        data: &[u8],
+        fds: Option<&[RawFd]>,
+    ) -> vhost_user::Result<()> {
+        self.check_state()?;
+
+        let len = mem::size_of::<T>() + data.len();
+        let hdr = VhostUserGpuMsgHeader::new(request, 0, len as u32);
+        self.sock.send_message_with_payload(&hdr, body, data, fds)?;
         Ok(())
     }
 
@@ -137,6 +155,18 @@ impl GpuBackend {
             .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("{}", e)))
     }
 
+    fn send_message_with_payload<T: ByteValued>(
+        &self,
+        request: GpuBackendReq,
+        body: &T,
+        data: &[u8],
+        fds: Option<&[RawFd]>,
+    ) -> io::Result<()> {
+        self.node()
+            .send_message_with_payload(request, body, data, fds)
+            .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("{}", e)))
+    }
+
     /// Forward 2d gpu command get_display_info requests to the frontend.
     pub fn get_display_info(&mut self) -> io::Result<VirtioGpuRespDisplayInfo> {
         self.send_header(GpuBackendReq::GET_DISPLAY_INFO, None)
@@ -153,6 +183,26 @@ impl GpuBackend {
     /// Forward 2d gpu command SetScanout requests to the frontend.
     pub fn set_scanout(&mut self, scanout: &VhostUserGpuScanout) -> io::Result<()> {
         self.send_message_no_reply(GpuBackendReq::SCANOUT, scanout, None)
+            .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("{}", e)))
+    }
+
+    /// Forward 2d gpu command for SetScanout and sharing DMABUF fd requests to the frontend.
+    pub fn set_dmabuf_scanout(
+        &mut self,
+        scanout: &VhostUserGpuDMABUFScanout,
+        fd: &dyn AsRawFd,
+    ) -> io::Result<()> {
+        self.send_message_no_reply(
+            GpuBackendReq::DMABUF_SCANOUT,
+            scanout,
+            Some(&[fd.as_raw_fd()]),
+        )
+        .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("{}", e)))
+    }
+
+    /// Forward 2d gpu command Update Scanout requests to the frontend.
+    pub fn update_scanout(&mut self, update: &VhostUserGpuUpdate, data: &[u8]) -> io::Result<()> {
+        self.send_message_with_payload(GpuBackendReq::UPDATE, update, data, None)
             .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("{}", e)))
     }
 
