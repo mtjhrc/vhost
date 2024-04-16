@@ -32,6 +32,10 @@ use crate::VringConfigData;
 /// 4K should be enough too because it can support 255 memory regions at most.
 pub const MAX_MSG_SIZE: usize = 0x1000;
 
+/// The vhost-user specification uses a field of u32 to store message length. This is used for
+/// sending big messages such as the GpuBackendReq::UPDATE (VHOST_USER_GPU_UPDATE)
+pub const MAX_OVERSIZED_MSG_SIZE: usize = u32::MAX as usize;
+
 /// The VhostUserMemory message has variable message size and variable number of attached file
 /// descriptors. Each user memory region entry in the message payload occupies 32 bytes,
 /// so setting maximum number of attached file descriptors based on the maximum message size.

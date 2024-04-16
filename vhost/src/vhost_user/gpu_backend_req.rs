@@ -52,6 +52,22 @@ impl BackendInternal {
         Ok(())
     }
 
+    fn send_message_oversized_with_payload_no_reply<T: ByteValued>(
+        &mut self,
+        request: GpuBackendReq,
+        body: &T,
+        data: &[u8],
+        fds: Option<&[RawFd]>,
+    ) -> vhost_user::Result<()> {
+        self.check_state()?;
+
+        let len = mem::size_of::<T>() + data.len();
+        let hdr = VhostUserGpuMsgHeader::new(request, 0, len as u32);
+        self.sock
+            .send_message_oversized_with_payload(&hdr, body, data, fds)?;
+        Ok(())
+    }
+
     fn send_message<T: ByteValued, V: ByteValued + Sized + Default + VhostUserMsgValidator>(
         &mut self,
         request: GpuBackendReq,
@@ -135,6 +151,18 @@ impl GpuBackend {
             .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("{}", e)))
     }
 
+    fn send_message_oversized_with_payload_no_reply<T: ByteValued>(
+        &self,
+        request: GpuBackendReq,
+        body: &T,
+        data: &[u8],
+        fds: Option<&[RawFd]>,
+    ) -> io::Result<()> {
+        self.node()
+            .send_message_oversized_with_payload_no_reply(request, body, data, fds)
+            .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("{}", e)))
+    }
+
     /// Send the VHOST_USER_GPU_GET_DISPLAY_INFO message to the frontend and wait for a reply.
     /// Get the preferred display configuration.
     pub fn get_display_info(&self) -> io::Result<VirtioGpuRespDisplayInfo> {
@@ -152,6 +180,13 @@ impl GpuBackend {
     /// Set the scanout resolution. To disable a scanout, the dimensions width/height are set to 0.
     pub fn set_scanout(&self, scanout: &VhostUserGpuScanout) -> io::Result<()> {
         self.send_message_no_reply(GpuBackendReq::SCANOUT, scanout, None)
+    }
+
+    /// Sends the VHOST_USER_GPU_UPDATE  message to the frontend. Doesn't wait for a reply.
+    /// Updates the scanout content. The data payload contains the graphical bits.
+    /// The display should be flushed and presented.
+    pub fn update_scanout(&self, update: &VhostUserGpuUpdate, data: &[u8]) -> io::Result<()> {
+        self.send_message_oversized_with_payload_no_reply(GpuBackendReq::UPDATE, update, data, None)
     }
 
     /// Create a new instance from a `UnixStream` object.

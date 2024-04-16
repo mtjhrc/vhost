@@ -275,6 +275,42 @@ impl<H: MsgHeader> Endpoint<H> {
         Ok(())
     }
 
+    /// Send a message with header, body and payload. Optional file descriptors
+    /// may also be attached to the message. Unlike send_message_with_payload
+    /// allows sending messages bigger than MAX_MSG_SIZE (up to MAX_OVERSIZED_MSG_SIZE)
+    /// # Return:
+    /// * - number of bytes sent on success
+    /// * - SocketRetry: temporary error caused by signals or short of resources.
+    /// * - SocketBroken: the underline socket is broken.
+    /// * - SocketError: other socket related errors.
+    /// * - OversizedMsg: message size is too big.
+    /// * - PartialMessage: received a partial message.
+    /// * - IncorrectFds: wrong number of attached fds.
+    pub fn send_message_oversized_with_payload<T: ByteValued>(
+        &mut self,
+        hdr: &H,
+        body: &T,
+        payload: &[u8],
+        fds: Option<&[RawFd]>,
+    ) -> Result<()> {
+        let total = mem::size_of::<H>() + mem::size_of::<T>() + payload.len();
+        if total > MAX_OVERSIZED_MSG_SIZE {
+            return Err(Error::OversizedMsg);
+        }
+
+        if let Some(fd_arr) = fds {
+            if fd_arr.len() > MAX_ATTACHED_FD_ENTRIES {
+                return Err(Error::IncorrectFds);
+            }
+        }
+
+        let len = self.send_iovec_all(&[hdr.as_slice(), body.as_slice(), payload], fds)?;
+        if len != total {
+            return Err(Error::PartialMessage);
+        }
+        Ok(())
+    }
+
     /// Reads bytes from the socket into the given scatter/gather vectors.
     ///
     /// # Return:
