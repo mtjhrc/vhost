@@ -1,7 +1,7 @@
-use std::os::fd::RawFd;
+use std::os::fd::{AsRawFd, RawFd};
 use std::os::unix::net::UnixStream;
 use std::sync::{Arc, Mutex, MutexGuard};
-use std::{io, mem};
+use std::{io, mem, slice};
 
 use vm_memory::ByteValued;
 
@@ -187,6 +187,27 @@ impl GpuBackend {
     /// The display should be flushed and presented.
     pub fn update_scanout(&self, update: &VhostUserGpuUpdate, data: &[u8]) -> io::Result<()> {
         self.send_message_oversized_with_payload_no_reply(GpuBackendReq::UPDATE, update, data, None)
+    }
+
+    /// Send the VHOST_USER_GPU_DMABUF_SCANOUT  message to the frontend. Doesn't wait for a reply.
+    /// Set the scanout resolution/configuration, and share a DMABUF file descriptor for the scanout
+    /// content, which is passed as ancillary data. To disable a scanout, the dimensions
+    /// width/height are set to 0, there is no file descriptor passed.
+    pub fn set_dmabuf_scanout(
+        &self,
+        scanout: &VhostUserGpuDMABUFScanout,
+        fd: Option<&impl AsRawFd>,
+    ) -> io::Result<()> {
+        let fd = fd.map(AsRawFd::as_raw_fd);
+        let fd = fd.as_ref().map(slice::from_ref);
+        self.send_message_no_reply(GpuBackendReq::DMABUF_SCANOUT, scanout, fd)
+    }
+
+    /// Send the VHOST_USER_GPU_DMABUF_UPDATE  message to the frontend. Doesn't wait for a reply.
+    /// The display should be flushed and presented according to updated region
+    /// from VhostUserGpuUpdate.
+    pub fn update_dmabuf_scanout(&self, update: &VhostUserGpuUpdate) -> io::Result<()> {
+        self.send_message_no_reply(GpuBackendReq::DMABUF_UPDATE, update, None)
     }
 
     /// Create a new instance from a `UnixStream` object.
