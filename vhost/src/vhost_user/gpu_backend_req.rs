@@ -12,9 +12,10 @@ use std::{io, mem};
 use vm_memory::ByteValued;
 
 use super::gpu_message::{
-    VhostUserGpuDMABUFScanout, VhostUserGpuEdidRequest, VhostUserGpuScanout, VhostUserGpuUpdate,
-    VirtioGpuRespGetEdid,
+    VhostUserGpuCursorPos, VhostUserGpuCursorUpdate, VhostUserGpuDMABUFScanout,
+    VhostUserGpuEdidRequest, VhostUserGpuScanout, VhostUserGpuUpdate, VirtioGpuRespGetEdid,
 };
+use super::message::VhostUserU64;
 
 struct BackendInternal {
     sock: Endpoint<VhostUserGpuMsgHeader<GpuBackendReq>>,
@@ -167,6 +168,39 @@ impl GpuBackend {
             .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("{}", e)))
     }
 
+    /// Forward 2d gpu command GET_PROTOCOL_FEATURES requests to the frontend.
+    pub fn get_protocol_features(&mut self, msg: &VhostUserU64) -> io::Result<VhostUserU64> {
+        self.send_message(GpuBackendReq::GET_PROTOCOL_FEATURES, msg, None)
+            .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("{}", e)))
+    }
+
+    /// Forward 2d gpu command SET_PROTOCOL_FEATURES  requests to the frontend.
+    pub fn set_protocol_features(&mut self, msg: &VhostUserU64) -> io::Result<()> {
+        self.send_message_no_reply(GpuBackendReq::SET_PROTOCOL_FEATURES, msg, None)
+            .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("{}", e)))
+    }
+
+    /// Forward 2d gpu command CURSOR_POS requests to the frontend.
+    pub fn cursor_pos(&mut self, cursor_pos: &VhostUserGpuCursorPos) -> io::Result<()> {
+        self.send_message_no_reply(GpuBackendReq::CURSOR_POS, cursor_pos, None)
+            .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("{}", e)))
+    }
+
+    /// Forward 2d gpu command CURSOR_POS_HIDE requests to the frontend.
+    pub fn cursor_pos_hide(&mut self, cursor_pos: &VhostUserGpuCursorPos) -> io::Result<()> {
+        self.send_message_no_reply(GpuBackendReq::CURSOR_POS_HIDE, cursor_pos, None)
+            .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("{}", e)))
+    }
+
+    /// Forward 2d gpu command CURSOR_POS_UPDATE requests to the frontend.
+    pub fn cursor_pos_update(
+        &mut self,
+        cursor_update: &VhostUserGpuCursorUpdate,
+    ) -> io::Result<()> {
+        self.send_message_no_reply(GpuBackendReq::CURSOR_POS_UPDATE, cursor_update, None)
+            .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("{}", e)))
+    }
+
     /// Forward 2d gpu command get_display_info requests to the frontend.
     pub fn get_display_info(&mut self) -> io::Result<VirtioGpuRespDisplayInfo> {
         self.send_header(GpuBackendReq::GET_DISPLAY_INFO, None)
@@ -203,6 +237,16 @@ impl GpuBackend {
     /// Forward 2d gpu command Update Scanout requests to the frontend.
     pub fn update_scanout(&mut self, update: &VhostUserGpuUpdate, data: &[u8]) -> io::Result<()> {
         self.send_message_with_payload(GpuBackendReq::UPDATE, update, data, None)
+            .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("{}", e)))
+    }
+
+    /// Forward 2d gpu command Update dmabuf Scanout requests to the frontend.
+    pub fn update_dmabuf_scanout(
+        &mut self,
+        update: &VhostUserGpuUpdate,
+        data: &[u8],
+    ) -> io::Result<()> {
+        self.send_message_with_payload(GpuBackendReq::DMABUF_UPDATE, update, data, None)
             .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("{}", e)))
     }
 

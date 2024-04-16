@@ -315,6 +315,52 @@ unsafe impl ByteValued for VhostUserGpuUpdate {}
 
 impl VhostUserMsgValidator for VhostUserGpuUpdate {}
 
+/// The cursor location
+/// Data is struct VhostUserGpuCursorPos
+#[derive(Copy, Clone, Debug, Default)]
+#[repr(C)]
+pub struct VhostUserGpuCursorPos {
+    /// the scanout where the cursor is located
+    pub scanout_id: u32,
+    /// The cursor position field x
+    pub x: u32,
+    /// The cursor position field y
+    pub y: u32,
+}
+unsafe impl ByteValued for VhostUserGpuCursorPos {}
+
+impl VhostUserMsgValidator for VhostUserGpuCursorPos {}
+
+/// Update the cursor shape and location.
+/// Data is struct VhostUserGpuCursorUpdate
+#[derive(Copy, Clone, Debug)]
+#[repr(C)]
+pub struct VhostUserGpuCursorUpdate {
+    /// The cursor location
+    pub pos: VhostUserGpuCursorPos,
+    /// The cursor hot location x
+    pub hot_x: u32,
+    /// The cursor hot location y
+    pub hot_y: u32,
+    /// 64x64 RGBA cursor data
+    pub data: [u32; 64 * 64],
+}
+
+impl Default for VhostUserGpuCursorUpdate {
+    fn default() -> Self {
+        VhostUserGpuCursorUpdate {
+            pos: VhostUserGpuCursorPos::default(),
+            hot_x: u32::default(),
+            hot_y: u32::default(),
+            data: [0; 64 * 64],
+        }
+    }
+}
+
+unsafe impl ByteValued for VhostUserGpuCursorUpdate {}
+
+impl VhostUserMsgValidator for VhostUserGpuCursorUpdate {}
+
 /* VIRTIO_GPU_RESP_OK_EDID */
 /// Response type is VIRTIO_GPU_RESP_OK_EDID
 #[derive(Copy, Clone, Debug)]
