@@ -218,6 +218,21 @@ impl GpuBackend {
         self.send_message_no_reply(GpuBackendReq::DMABUF_SCANOUT, scanout, fd)
     }
 
+    /// Send the VHOST_USER_GPU_DMABUF_SCANOUT2  message to the frontend. Doesn't wait for a reply.
+    /// Same as `set_dmabuf_scanout` (VHOST_USER_GPU_DMABUF_SCANOUT), but also sends the dmabuf
+    /// modifiers appended to the message, which were not provided in the other message. This
+    /// message requires the VhostUserGpuProtocolFeatures::DMABUF2
+    /// (VHOST_USER_GPU_PROTOCOL_F_DMABUF2) protocol feature to be supported.
+    pub fn set_dmabuf_scanout2(
+        &self,
+        scanout: &VhostUserGpuDMABUFScanout2,
+        fd: Option<&impl AsRawFd>,
+    ) -> io::Result<()> {
+        let fd = fd.map(AsRawFd::as_raw_fd);
+        let fd = fd.as_ref().map(slice::from_ref);
+        self.send_message_no_reply(GpuBackendReq::DMABUF_SCANOUT2, scanout, fd)
+    }
+
     /// Send the VHOST_USER_GPU_DMABUF_UPDATE  message to the frontend. Doesn't wait for a reply.
     /// The display should be flushed and presented according to updated region
     /// from VhostUserGpuUpdate.
