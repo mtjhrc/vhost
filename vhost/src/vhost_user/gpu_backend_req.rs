@@ -294,6 +294,58 @@ impl GpuBackend {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::vhost_user::message::VhostUserEmpty;
+    use libc::STDOUT_FILENO;
+    use std::mem::{size_of, size_of_val};
+    use std::os::fd::RawFd;
+    use std::thread;
+
+    #[derive(Default, Copy, Clone, Debug)]
+    struct MockUnreachableResponse;
+
+    // SAFETY: Safe because type is zero size.
+    unsafe impl ByteValued for MockUnreachableResponse {}
+
+    impl VhostUserMsgValidator for MockUnreachableResponse {
+        fn is_valid(&self) -> bool {
+            panic!("UnreachableResponse should not have been constructed and validated!");
+        }
+    }
+
+    #[derive(Copy, Default, Clone, Debug, PartialEq)]
+    struct MockData(u32);
+
+    // SAFETY: Safe because type is POD.
+    unsafe impl ByteValued for MockData {}
+
+    impl VhostUserMsgValidator for MockData {}
+
+    const REQUEST: GpuBackendReq = GpuBackendReq::GET_PROTOCOL_FEATURES;
+    const VALID_REQUEST: MockData = MockData(123);
+    const VALID_RESPONSE: MockData = MockData(456);
+
+    fn reply_with_valid_response(
+        frontend: &mut Endpoint<VhostUserGpuMsgHeader<GpuBackendReq>>,
+        hdr: &VhostUserGpuMsgHeader<GpuBackendReq>,
+    ) {
+        let response_hdr = VhostUserGpuMsgHeader::new(
+            hdr.get_code().unwrap(),
+            VhostUserGpuHeaderFlag::REPLY.bits(),
+            size_of::<MockData>() as u32,
+        );
+
+        frontend
+            .send_message(&response_hdr, &VALID_RESPONSE, None)
+            .unwrap();
+    }
+
+    fn frontend_backend_pair() -> (Endpoint<VhostUserGpuMsgHeader<GpuBackendReq>>, GpuBackend) {
+        let (backend, frontend) = UnixStream::pair().unwrap();
+        let backend = GpuBackend::from_stream(backend);
+        let frontend = Endpoint::from_stream(frontend);
+
+        (frontend, backend)
+    }
 
     #[test]
     fn test_gpu_backend_req_set_failed() {
@@ -302,5 +354,179 @@ mod tests {
         assert!(backend.node().error.is_none());
         backend.set_failed(libc::EAGAIN);
         assert_eq!(backend.node().error, Some(libc::EAGAIN));
+    }
+
+    #[test]
+    fn test_gpu_backend_cannot_send_when_failed() {
+        let (_frontend, backend) = frontend_backend_pair();
+        backend.set_failed(libc::EAGAIN);
+
+        backend
+            .send_header::<MockData>(GpuBackendReq::GET_PROTOCOL_FEATURES, None)
+            .unwrap_err();
+
+        backend
+            .send_message::<VhostUserEmpty, MockData>(
+                GpuBackendReq::GET_PROTOCOL_FEATURES,
+                &VhostUserEmpty,
+                None,
+            )
+            .unwrap_err();
+
+        backend
+            .send_message_no_reply::<VhostUserEmpty>(
+                GpuBackendReq::GET_PROTOCOL_FEATURES,
+                &VhostUserEmpty,
+                None,
+            )
+            .unwrap_err();
+
+        backend
+            .send_message_oversized_no_reply::<VhostUserEmpty>(
+                GpuBackendReq::GET_PROTOCOL_FEATURES,
+                &VhostUserEmpty,
+                None,
+            )
+            .unwrap_err();
+
+        backend
+            .send_message_oversized_with_payload_no_reply::<VhostUserEmpty>(
+                GpuBackendReq::GET_PROTOCOL_FEATURES,
+                &VhostUserEmpty,
+                &[],
+                None,
+            )
+            .unwrap_err();
+    }
+
+    #[test]
+    fn test_gpu_backend_send_header() {
+        let (mut frontend, backend) = frontend_backend_pair();
+
+        let sender_thread = thread::spawn(move || {
+            let response: MockData = backend.send_header(REQUEST, None).unwrap();
+            assert_eq!(response, VALID_RESPONSE);
+        });
+
+        let (hdr, fds) = frontend.recv_header().unwrap();
+        assert!(fds.is_none());
+
+        assert_eq!(hdr, VhostUserGpuMsgHeader::new(REQUEST, 0, 0));
+        reply_with_valid_response(&mut frontend, &hdr);
+        sender_thread.join().expect("Sender failed");
+    }
+
+    #[test]
+    fn test_gpu_backend_send_message() {
+        let (mut frontend, backend) = frontend_backend_pair();
+
+        let sender_thread = thread::spawn(move || {
+            let response: MockData = backend.send_message(REQUEST, &VALID_REQUEST, None).unwrap();
+            assert_eq!(response, VALID_RESPONSE);
+        });
+
+        let (hdr, body, fds) = frontend.recv_body::<MockData>().unwrap();
+        let expected_hdr =
+            VhostUserGpuMsgHeader::new(REQUEST, 0, size_of_val(&VALID_REQUEST) as u32);
+        assert_eq!(hdr, expected_hdr);
+        assert_eq!(body, VALID_REQUEST);
+        assert!(fds.is_none());
+
+        reply_with_valid_response(&mut frontend, &hdr);
+        sender_thread.join().expect("Sender failed");
+    }
+
+    #[test]
+    fn test_gpu_backend_send_message_no_reply_with_fd() {
+        let (mut frontend, backend) = frontend_backend_pair();
+        let expected_hdr =
+            VhostUserGpuMsgHeader::new(REQUEST, 0, size_of_val(&VALID_REQUEST) as u32);
+
+        let requested_fds: &[RawFd] = &[STDOUT_FILENO];
+
+        let sender_thread = thread::spawn(move || {
+            backend
+                .send_message_no_reply(REQUEST, &VALID_REQUEST, Some(requested_fds))
+                .unwrap();
+        });
+
+        let (hdr, body, fds) = frontend.recv_body::<MockData>().unwrap();
+        assert_eq!(hdr, expected_hdr);
+        assert_eq!(body, VALID_REQUEST);
+        let fds = fds.unwrap();
+        assert_eq!(fds.len(), 1);
+
+        sender_thread.join().expect("Sender failed");
+    }
+
+    #[test]
+    fn test_gpu_backend_oversized_cursor_message() {
+        let (mut frontend, backend) = frontend_backend_pair();
+
+        let cursor_update = VhostUserGpuCursorUpdate {
+            pos: VhostUserGpuCursorPos {
+                scanout_id: 1,
+                x: 10,
+                y: 10,
+            },
+            hot_x: 15,
+            hot_y: 15,
+            data: [0; 4096],
+        };
+
+        let expected_hdr = VhostUserGpuMsgHeader::new(
+            GpuBackendReq::CURSOR_UPDATE,
+            0,
+            size_of_val(&cursor_update) as u32,
+        );
+
+        let sender_thread = thread::spawn(move || {
+            backend.cursor_update(&cursor_update).unwrap();
+        });
+
+        let (hdr, body, fds) = frontend.recv_body::<VhostUserGpuCursorUpdate>().unwrap();
+
+        assert_eq!(hdr, expected_hdr);
+        assert_eq!(body, cursor_update);
+        assert!(fds.is_none());
+
+        sender_thread.join().expect("Sender failed");
+    }
+
+    #[test]
+    fn test_gpu_backend_send_oversized_message_with_payload() {
+        let (mut frontend, backend) = frontend_backend_pair();
+
+        let expected_payload = vec![1; 8192];
+        let expected_hdr = VhostUserGpuMsgHeader::new(
+            REQUEST,
+            0,
+            (size_of_val(&VALID_REQUEST) + expected_payload.len()) as u32,
+        );
+
+        let sending_data = expected_payload.clone();
+        let sender_thread = thread::spawn(move || {
+            backend
+                .send_message_oversized_with_payload_no_reply(
+                    REQUEST,
+                    &VALID_REQUEST,
+                    &sending_data,
+                    None,
+                )
+                .unwrap();
+        });
+
+        let mut recv_payload = vec![0; 8192];
+        let (hdr, body, num_bytes, fds) = frontend
+            .recv_payload_into_buf::<MockData>(&mut recv_payload)
+            .unwrap();
+
+        assert_eq!(hdr, expected_hdr);
+        assert_eq!(body, VALID_REQUEST);
+        assert_eq!(num_bytes, expected_payload.len());
+        assert!(fds.is_none());
+        assert_eq!(&recv_payload[..], &expected_payload[..]);
+
+        sender_thread.join().expect("Sender failed");
     }
 }

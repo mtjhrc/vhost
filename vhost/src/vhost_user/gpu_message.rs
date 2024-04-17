@@ -342,7 +342,7 @@ unsafe impl ByteValued for VhostUserGpuDMABUFScanout2 {}
 impl VhostUserMsgValidator for VhostUserGpuDMABUFScanout2 {}
 
 /// The VhostUserGpuCursorPos from the QEMU vhost-user-gpu specification.
-#[derive(Copy, Clone, Debug, Default)]
+#[derive(Copy, Clone, Debug, Default, PartialEq)]
 #[repr(C)]
 pub struct VhostUserGpuCursorPos {
     /// The scanout where the cursor is located
@@ -359,7 +359,7 @@ unsafe impl ByteValued for VhostUserGpuCursorPos {}
 impl VhostUserMsgValidator for VhostUserGpuCursorPos {}
 
 /// The VhostUserGpuCursorUpdate from the QEMU vhost-user-gpu specification.
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 #[repr(C)]
 pub struct VhostUserGpuCursorUpdate {
     /// The cursor location
