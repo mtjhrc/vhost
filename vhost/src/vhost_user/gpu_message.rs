@@ -363,7 +363,7 @@ unsafe impl ByteValued for VhostUserGpuCursorPos {}
 impl VhostUserMsgValidator for VhostUserGpuCursorPos {}
 
 /// The VhostUserGpuCursorUpdate from the QEMU vhost-user-gpu specification.
-#[derive(Default, Copy, Clone, Debug)]
+#[derive(Copy, Clone, Default, Debug)]
 #[repr(C)]
 pub struct VhostUserGpuCursorUpdate {
     /// The cursor location
