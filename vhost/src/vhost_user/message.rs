@@ -32,6 +32,10 @@ use crate::VringConfigData;
 /// 4K should be enough too because it can support 255 memory regions at most.
 pub const MAX_MSG_SIZE: usize = 0x1000;
 
+/// The vhost-user specification uses a field of u32 to store message length. This is used for
+/// sending big messages such as the GpuBackendReq::UPDATE (VHOST_USER_GPU_UPDATE)
+pub const MAX_OVERSIZED_MSG_SIZE: usize = u32::MAX as usize;
+
 /// The VhostUserMemory message has variable message size and variable number of attached file
 /// descriptors. Each user memory region entry in the message payload occupies 32 bytes,
 /// so setting maximum number of attached file descriptors based on the maximum message size.
@@ -52,6 +56,10 @@ pub const VHOST_USER_MAX_VRINGS: u64 = 0x8000u64;
 pub(super) trait Req:
     Clone + Copy + Debug + PartialEq + Eq + PartialOrd + Ord + Send + Sync + Into<u32> + TryFrom<u32>
 {
+}
+
+pub(super) trait MsgHeader: ByteValued + Copy + Default + VhostUserMsgValidator {
+    type Request: Req;
 }
 
 macro_rules! enum_value {
@@ -88,6 +96,7 @@ macro_rules! enum_value {
         }
     }
 }
+pub(crate) use enum_value;
 
 enum_value! {
     #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -253,6 +262,10 @@ pub(super) struct VhostUserMsgHeader<R: Req> {
     flags: u32,
     size: u32,
     _r: PhantomData<R>,
+}
+
+impl<R: Req> MsgHeader for VhostUserMsgHeader<R> {
+    type Request = R;
 }
 
 impl<R: Req> Debug for VhostUserMsgHeader<R> {
