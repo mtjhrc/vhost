@@ -331,9 +331,9 @@ impl VhostUserMsgValidator for VhostUserGpuDMABUFScanout {}
 #[repr(C, packed)]
 pub struct VhostUserGpuDMABUFScanout2 {
     /// The dmabuf scanout parameters
-    dmabuf_scanout: VhostUserGpuDMABUFScanout,
+    pub dmabuf_scanout: VhostUserGpuDMABUFScanout,
     /// The DMABUF modifiers
-    modifier: u64,
+    pub modifier: u64,
 }
 
 // SAFETY: Safe because all fields are POD.
