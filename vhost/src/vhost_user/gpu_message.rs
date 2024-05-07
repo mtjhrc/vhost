@@ -368,8 +368,8 @@ pub struct VhostUserGpuCursorUpdate {
     pub hot_x: u32,
     /// The cursor hot location y
     pub hot_y: u32,
-    /// 64x64 RGBA cursor data
-    pub data: [u32; 64 * 64],
+    /// 64x64 XRGB cursor data
+    pub data: [u8; 4 * 64 * 64],
 }
 
 impl Default for VhostUserGpuCursorUpdate {
@@ -378,7 +378,7 @@ impl Default for VhostUserGpuCursorUpdate {
             pos: VhostUserGpuCursorPos::default(),
             hot_x: u32::default(),
             hot_y: u32::default(),
-            data: [0; 64 * 64],
+            data: [0; 4 * 64 * 64],
         }
     }
 }
