@@ -194,6 +194,10 @@ enum_value! {
         SHARED_OBJECT_REMOVE = 7,
         /// Lookup for a virtio shared object.
         SHARED_OBJECT_LOOKUP = 8,
+        /// Map memory into guest address space
+        SHMEM_MAP = 9,
+        /// Unmap memory from guest address space
+        SHMEM_UNMAP = 10,
     }
 }
 
@@ -987,6 +991,45 @@ impl VhostUserMsgValidator for VhostUserTransferDeviceState {
     }
 }
 
+// Bit mask for flags in VhostUserMMap struct
+bitflags! {
+    #[derive(Copy, Clone, Debug, Eq, PartialEq, Default)]
+    /// Flags specifying access permissions of memory mapping of a file
+    pub struct VhostUserMMapFlags: u64 {
+        /// Read-only permission
+        const MAP_READ = 0;
+        /// Read-write permission
+        const MAP_READ_WRITE = 1 << 0;
+    }
+}
+
+/// Backend request to mmap a file-backed buffer into guest memory
+#[repr(C, packed)]
+#[derive(Debug, Copy, Clone, Default)]
+pub struct VhostUserMMap {
+    /// Shared memory region ID.
+    pub shmid: u8,
+    /// Struct padding.
+    pub padding: [u8; 7],
+    /// File offset.
+    pub fd_offset: u64,
+    /// Offset into the shared memory region.
+    pub shm_offset: u64,
+    /// Size of region to map.
+    pub len: u64,
+    /// Flags for the mmap operation
+    pub flags: u64,
+}
+
+// SAFETY: Safe because all fields of VhostUserBackendMapMsg are POD.
+unsafe impl ByteValued for VhostUserMMap {}
+
+impl VhostUserMsgValidator for VhostUserMMap {
+    fn is_valid(&self) -> bool {
+        self.fd_offset.checked_add(self.len).is_some()
+            && self.shm_offset.checked_add(self.len).is_some()
+    }
+}
 /// Inflight I/O descriptor state for split virtqueues
 #[repr(C, packed)]
 #[derive(Clone, Copy, Default)]
