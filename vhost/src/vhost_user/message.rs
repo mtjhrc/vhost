@@ -194,6 +194,10 @@ enum_value! {
         SHARED_OBJECT_REMOVE = 7,
         /// Lookup for a virtio shared object.
         SHARED_OBJECT_LOOKUP = 8,
+        /// Map memory into guest address space
+        MEM_MAP = 9,
+        /// Unmap memory from guest address space
+        MEM_UNMAP = 10,
 
         // Non-standard message types.
         /// Virtio-fs draft: map file content into the window.
@@ -1011,6 +1015,31 @@ bitflags! {
         const MAP_R = 0x1;
         /// Write permission.
         const MAP_W = 0x2;
+    }
+}
+
+/// Backend request to mmap a file-backed buffer into guest memory
+#[repr(C, packed)]
+#[derive(Debug, Copy, Clone, Default)]
+pub struct VhostUserBackendMapMsg {
+    /// File offset.
+    pub fd_offset: u64,
+    /// Offset into the shared memory region.
+    pub c_offset: u64,
+    /// Size of region to map.
+    pub len: u64,
+    /// Flags for the mmap operation
+    pub flags: VhostUserFSBackendMsgFlags,
+}
+
+// SAFETY: Safe because all fields of VhostUserBackendMapMsg are POD.
+unsafe impl ByteValued for VhostUserBackendMapMsg {}
+
+impl VhostUserMsgValidator for VhostUserBackendMapMsg {
+    fn is_valid(&self) -> bool {
+        ({ self.flags }.bits() & !VhostUserFSBackendMsgFlags::all().bits()) == 0
+            && self.fd_offset.checked_add(self.len).is_some()
+            && self.c_offset.checked_add(self.len).is_some()
     }
 }
 

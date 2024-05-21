@@ -52,6 +52,16 @@ pub trait VhostUserFrontendReqHandler {
         Err(std::io::Error::from_raw_os_error(libc::ENOSYS))
     }
 
+    /// Handle shared memory region mapping requests.
+    fn mem_backend_map(&self, _req: &VhostUserBackendMapMsg, _fd: &dyn AsRawFd) -> HandlerResult<u64> {
+        Err(std::io::Error::from_raw_os_error(libc::ENOSYS))
+    }
+
+    /// Handle shared memory region unmapping requests.
+    fn mem_backend_unmap(&self, _req: &VhostUserBackendMapMsg) -> HandlerResult<u64> {
+        Err(std::io::Error::from_raw_os_error(libc::ENOSYS))
+    }
+
     /// Handle virtio-fs map file requests.
     fn fs_backend_map(&self, _fs: &VhostUserFSBackendMsg, _fd: &dyn AsRawFd) -> HandlerResult<u64> {
         Err(std::io::Error::from_raw_os_error(libc::ENOSYS))
@@ -101,6 +111,16 @@ pub trait VhostUserFrontendReqHandlerMut {
         _uuid: &VhostUserSharedMsg,
         _fd: &dyn AsRawFd,
     ) -> HandlerResult<u64> {
+        Err(std::io::Error::from_raw_os_error(libc::ENOSYS))
+    }
+
+    /// Handle shared memory region mapping requests.
+    fn mem_backend_map(&mut self, _req: &VhostUserBackendMapMsg, _fd: &dyn AsRawFd) -> HandlerResult<u64> {
+        Err(std::io::Error::from_raw_os_error(libc::ENOSYS))
+    }
+
+    /// Handle shared memory region unmapping requests.
+    fn mem_backend_unmap(&mut self, _req: &VhostUserBackendMapMsg) -> HandlerResult<u64> {
         Err(std::io::Error::from_raw_os_error(libc::ENOSYS))
     }
 
@@ -158,6 +178,14 @@ impl<S: VhostUserFrontendReqHandlerMut> VhostUserFrontendReqHandler for Mutex<S>
         fd: &dyn AsRawFd,
     ) -> HandlerResult<u64> {
         self.lock().unwrap().shared_object_lookup(uuid, fd)
+    }
+
+    fn mem_backend_map(&self, req: &VhostUserBackendMapMsg, fd: &dyn AsRawFd) -> HandlerResult<u64> {
+        self.lock().unwrap().mem_backend_map(req, fd)
+    }
+
+    fn mem_backend_unmap(&self, req: &VhostUserBackendMapMsg) -> HandlerResult<u64> {
+        self.lock().unwrap().mem_backend_unmap(req)
     }
 
     fn fs_backend_map(&self, fs: &VhostUserFSBackendMsg, fd: &dyn AsRawFd) -> HandlerResult<u64> {
@@ -305,6 +333,16 @@ impl<S: VhostUserFrontendReqHandler> FrontendReqHandler<S> {
                     .shared_object_lookup(&msg, &files.unwrap()[0])
                     .map_err(Error::ReqHandlerError)
             }
+            Ok(BackendReq::MEM_MAP) => {
+                let msg = self.extract_msg_body::<VhostUserBackendMapMsg>(&hdr, size, &buf)?;
+                self.backend
+                    .mem_backend_map(&msg, &files.unwrap()[0])
+                    .map_err(Error::ReqHandlerError)
+            }
+            Ok(BackendReq::MEM_UNMAP) => {
+                let msg = self.extract_msg_body::<VhostUserBackendMapMsg>(&hdr, size, &buf)?;
+                self.backend.mem_backend_unmap(&msg).map_err(Error::ReqHandlerError)
+            }
             Ok(BackendReq::FS_MAP) => {
                 let msg = self.extract_msg_body::<VhostUserFSBackendMsg>(&hdr, size, &buf)?;
                 // check_attached_files() has validated files
@@ -368,7 +406,12 @@ impl<S: VhostUserFrontendReqHandler> FrontendReqHandler<S> {
         files: &Option<Vec<File>>,
     ) -> Result<()> {
         match hdr.get_code() {
-            Ok(BackendReq::SHARED_OBJECT_LOOKUP | BackendReq::FS_MAP | BackendReq::FS_IO) => {
+            Ok(
+                BackendReq::SHARED_OBJECT_LOOKUP
+                | BackendReq::MEM_MAP
+                | BackendReq::FS_MAP
+                | BackendReq::FS_IO,
+            ) => {
                 // Expect a single file is passed.
                 match files {
                     Some(files) if files.len() == 1 => Ok(()),
