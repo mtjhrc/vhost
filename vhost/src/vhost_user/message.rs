@@ -194,6 +194,20 @@ enum_value! {
         SHARED_OBJECT_REMOVE = 7,
         /// Lookup for a virtio shared object.
         SHARED_OBJECT_LOOKUP = 8,
+        /// Map memory into guest address space
+        MEM_MAP = 9,
+        /// Unmap memory from guest address space
+        MEM_UNMAP = 10,
+
+        // Non-standard message types.
+        /// Virtio-fs draft: map file content into the window.
+        FS_MAP = 1000,
+        /// Virtio-fs draft: unmap file content from the window.
+        FS_UNMAP = 1001,
+        /// Virtio-fs draft: sync file content.
+        FS_SYNC = 1002,
+        /// Virtio-fs draft: perform a read/write from an fd directly to GPA.
+        FS_IO = 1003,
     }
 }
 
@@ -987,6 +1001,82 @@ impl VhostUserMsgValidator for VhostUserTransferDeviceState {
     fn is_valid(&self) -> bool {
         VhostTransferStateDirection::try_from(self.direction).is_ok()
             && VhostTransferStatePhase::try_from(self.phase).is_ok()
+    }
+}
+
+// Bit mask for flags in virtio-fs backend messages
+bitflags! {
+    #[derive(Copy, Clone, Debug, Eq, PartialEq, Default)]
+    /// Flags for virtio-fs backend messages.
+    pub struct VhostUserFSBackendMsgFlags: u64 {
+        /// Empty permission.
+        const EMPTY = 0x0;
+        /// Read permission.
+        const MAP_R = 0x1;
+        /// Write permission.
+        const MAP_W = 0x2;
+    }
+}
+
+/// Backend request to mmap a file-backed buffer into guest memory
+#[repr(C, packed)]
+#[derive(Debug, Copy, Clone, Default)]
+pub struct VhostUserBackendMapMsg {
+    /// Shared memory region ID.
+    pub shmid: u8,
+    padding: [u8; 7],
+    /// File offset.
+    pub fd_offset: u64,
+    /// Offset into the shared memory region.
+    pub shm_offset: u64,
+    /// Size of region to map.
+    pub len: u64,
+    /// Flags for the mmap operation
+    pub flags: VhostUserFSBackendMsgFlags,
+}
+
+// SAFETY: Safe because all fields of VhostUserBackendMapMsg are POD.
+unsafe impl ByteValued for VhostUserBackendMapMsg {}
+
+impl VhostUserMsgValidator for VhostUserBackendMapMsg {
+    fn is_valid(&self) -> bool {
+        ({ self.flags }.bits() & !VhostUserFSBackendMsgFlags::all().bits()) == 0
+            && self.fd_offset.checked_add(self.len).is_some()
+            && self.shm_offset.checked_add(self.len).is_some()
+    }
+}
+
+/// Max entries in one virtio-fs backend request.
+pub const VHOST_USER_FS_BACKEND_ENTRIES: usize = 8;
+
+/// Backend request message to update the MMIO window.
+#[repr(C, packed)]
+#[derive(Copy, Clone, Default)]
+pub struct VhostUserFSBackendMsg {
+    /// File offset.
+    pub fd_offset: [u64; VHOST_USER_FS_BACKEND_ENTRIES],
+    /// Offset into the DAX window.
+    pub cache_offset: [u64; VHOST_USER_FS_BACKEND_ENTRIES],
+    /// Size of region to map.
+    pub len: [u64; VHOST_USER_FS_BACKEND_ENTRIES],
+    /// Flags for the mmap operation
+    pub flags: [VhostUserFSBackendMsgFlags; VHOST_USER_FS_BACKEND_ENTRIES],
+}
+
+// SAFETY: Safe because all fields of VhostUserFSBackendMsg are POD.
+unsafe impl ByteValued for VhostUserFSBackendMsg {}
+
+impl VhostUserMsgValidator for VhostUserFSBackendMsg {
+    fn is_valid(&self) -> bool {
+        for i in 0..VHOST_USER_FS_BACKEND_ENTRIES {
+            if ({ self.flags[i] }.bits() & !VhostUserFSBackendMsgFlags::all().bits()) != 0
+                || self.fd_offset[i].checked_add(self.len[i]).is_none()
+                || self.cache_offset[i].checked_add(self.len[i]).is_none()
+            {
+                return false;
+            }
+        }
+        true
     }
 }
 

@@ -183,6 +183,26 @@ impl VhostUserFrontendReqHandler for Backend {
             Some(&[fd.as_raw_fd()]),
         )
     }
+
+    /// Forward vhost-user memory map file requests to the backend.
+    fn mem_backend_map(&self, req: &VhostUserBackendMapMsg, fd: &dyn AsRawFd) -> HandlerResult<u64> {
+        self.send_message(BackendReq::MEM_MAP, req, Some(&[fd.as_raw_fd()]))
+    }
+
+    /// Forward vhost-user memory unmap file requests to the frontend.
+    fn mem_backend_unmap(&self, req: &VhostUserBackendMapMsg) -> HandlerResult<u64> {
+        self.send_message(BackendReq::MEM_UNMAP, req, None)
+    }
+
+    /// Forward vhost-user-fs map file requests to the backend.
+    fn fs_backend_map(&self, fs: &VhostUserFSBackendMsg, fd: &dyn AsRawFd) -> HandlerResult<u64> {
+        self.send_message(BackendReq::FS_MAP, fs, Some(&[fd.as_raw_fd()]))
+    }
+
+    /// Forward vhost-user-fs unmap file requests to the frontend.
+    fn fs_backend_unmap(&self, fs: &VhostUserFSBackendMsg) -> HandlerResult<u64> {
+        self.send_message(BackendReq::FS_UNMAP, fs, None)
+    }
 }
 
 #[cfg(test)]
