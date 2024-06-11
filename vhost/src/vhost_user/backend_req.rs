@@ -155,7 +155,11 @@ impl VhostUserFrontendReqHandler for Backend {
     }
 
     /// Forward vhost-user memory map file requests to the backend.
-    fn mem_backend_map(&self, req: &VhostUserBackendMapMsg, fd: &dyn AsRawFd) -> HandlerResult<u64> {
+    fn mem_backend_map(
+        &self,
+        req: &VhostUserBackendMapMsg,
+        fd: &dyn AsRawFd,
+    ) -> HandlerResult<u64> {
         self.send_message(BackendReq::MEM_MAP, req, Some(&[fd.as_raw_fd()]))
     }
 

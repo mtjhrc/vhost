@@ -53,7 +53,11 @@ pub trait VhostUserFrontendReqHandler {
     }
 
     /// Handle shared memory region mapping requests.
-    fn mem_backend_map(&self, _req: &VhostUserBackendMapMsg, _fd: &dyn AsRawFd) -> HandlerResult<u64> {
+    fn mem_backend_map(
+        &self,
+        _req: &VhostUserBackendMapMsg,
+        _fd: &dyn AsRawFd,
+    ) -> HandlerResult<u64> {
         Err(std::io::Error::from_raw_os_error(libc::ENOSYS))
     }
 
@@ -115,7 +119,11 @@ pub trait VhostUserFrontendReqHandlerMut {
     }
 
     /// Handle shared memory region mapping requests.
-    fn mem_backend_map(&mut self, _req: &VhostUserBackendMapMsg, _fd: &dyn AsRawFd) -> HandlerResult<u64> {
+    fn mem_backend_map(
+        &mut self,
+        _req: &VhostUserBackendMapMsg,
+        _fd: &dyn AsRawFd,
+    ) -> HandlerResult<u64> {
         Err(std::io::Error::from_raw_os_error(libc::ENOSYS))
     }
 
@@ -180,7 +188,11 @@ impl<S: VhostUserFrontendReqHandlerMut> VhostUserFrontendReqHandler for Mutex<S>
         self.lock().unwrap().shared_object_lookup(uuid, fd)
     }
 
-    fn mem_backend_map(&self, req: &VhostUserBackendMapMsg, fd: &dyn AsRawFd) -> HandlerResult<u64> {
+    fn mem_backend_map(
+        &self,
+        req: &VhostUserBackendMapMsg,
+        fd: &dyn AsRawFd,
+    ) -> HandlerResult<u64> {
         self.lock().unwrap().mem_backend_map(req, fd)
     }
 
@@ -341,7 +353,9 @@ impl<S: VhostUserFrontendReqHandler> FrontendReqHandler<S> {
             }
             Ok(BackendReq::MEM_UNMAP) => {
                 let msg = self.extract_msg_body::<VhostUserBackendMapMsg>(&hdr, size, &buf)?;
-                self.backend.mem_backend_unmap(&msg).map_err(Error::ReqHandlerError)
+                self.backend
+                    .mem_backend_unmap(&msg)
+                    .map_err(Error::ReqHandlerError)
             }
             Ok(BackendReq::FS_MAP) => {
                 let msg = self.extract_msg_body::<VhostUserFSBackendMsg>(&hdr, size, &buf)?;
