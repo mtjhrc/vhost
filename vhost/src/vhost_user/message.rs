@@ -15,14 +15,25 @@ use std::io;
 use std::marker::PhantomData;
 use std::ops::Deref;
 
+use uuid::Uuid;
+
 use vm_memory::{mmap::NewBitmap, ByteValued, Error as MmapError, FileOffset, MmapRegion};
 
 #[cfg(feature = "xen")]
 use vm_memory::{GuestAddress, MmapRange, MmapXenFlags};
 
-use super::{Error, Result};
+use super::{enum_value, Error, Result};
 use crate::VringConfigData;
 
+/*
+TODO: Consider deprecating this. We don't actually have any preallocated buffers except in tests,
+so we should be able to support u32::MAX normally.
+Also this doesn't need to be public api, since Endpoint is private anyway, this doesn't seem
+useful for consumers of this crate.
+
+There are GPU specific messages (GpuBackendReq::UPDATE and CURSOR_UPDATE) that are larger than 4K.
+We can use MsgHeader::MAX_MSG_SIZE, if we want to support larger messages only for GPU headers.
+*/
 /// The vhost-user specification uses a field of u32 to store message length.
 /// On the other hand, preallocated buffers are needed to receive messages from the Unix domain
 /// socket. To preallocating a 4GB buffer for each vhost-user message is really just an overhead.
@@ -54,39 +65,11 @@ pub(super) trait Req:
 {
 }
 
-macro_rules! enum_value {
-    (
-        $(#[$meta:meta])*
-        $vis:vis enum $enum:ident: $T:tt {
-            $(
-                $(#[$variant_meta:meta])*
-                $variant:ident $(= $val:expr)?,
-            )*
-        }
-    ) => {
-        #[repr($T)]
-        $(#[$meta])*
-        $vis enum $enum {
-            $($(#[$variant_meta])* $variant $(= $val)?,)*
-        }
+pub(super) trait MsgHeader: ByteValued + Copy + Default + VhostUserMsgValidator {
+    type Request: Req;
 
-        impl std::convert::TryFrom<$T> for $enum {
-            type Error = ();
-
-            fn try_from(v: $T) -> std::result::Result<Self, Self::Error> {
-                match v {
-                    $(v if v == $enum::$variant as $T => Ok($enum::$variant),)*
-                    _ => Err(()),
-                }
-            }
-        }
-
-        impl std::convert::From<$enum> for $T {
-            fn from(v: $enum) -> $T {
-                v as $T
-            }
-        }
-    }
+    /// The maximum size of a msg that can be encapsulated by this MsgHeader
+    const MAX_MSG_SIZE: usize;
 }
 
 enum_value! {
@@ -178,6 +161,8 @@ enum_value! {
         /// Query the backend for its device status as defined in the VIRTIO
         /// specification.
         GET_STATUS = 40,
+        /// Retrieve a shared object from the device.
+        GET_SHARED_OBJECT = 41,
         /// Begin transfer of internal state to/from the backend for migration
         /// purposes.
         SET_DEVICE_STATE_FD = 42,
@@ -203,14 +188,12 @@ enum_value! {
         VRING_CALL = 4,
         /// Indicate that an error occurred on the specific vring.
         VRING_ERR = 5,
-        /// Virtio-fs draft: map file content into the window.
-        FS_MAP = 6,
-        /// Virtio-fs draft: unmap file content from the window.
-        FS_UNMAP = 7,
-        /// Virtio-fs draft: sync file content.
-        FS_SYNC = 8,
-        /// Virtio-fs draft: perform a read/write from an fd directly to GPA.
-        FS_IO = 9,
+        /// Add a virtio shared object.
+        SHARED_OBJECT_ADD = 6,
+        /// Remove a virtio shared object.
+        SHARED_OBJECT_REMOVE = 7,
+        /// Lookup for a virtio shared object.
+        SHARED_OBJECT_LOOKUP = 8,
     }
 }
 
@@ -253,6 +236,11 @@ pub(super) struct VhostUserMsgHeader<R: Req> {
     flags: u32,
     size: u32,
     _r: PhantomData<R>,
+}
+
+impl<R: Req> MsgHeader for VhostUserMsgHeader<R> {
+    type Request = R;
+    const MAX_MSG_SIZE: usize = MAX_MSG_SIZE;
 }
 
 impl<R: Req> Debug for VhostUserMsgHeader<R> {
@@ -442,6 +430,8 @@ bitflags! {
         const STATUS = 0x0001_0000;
         /// Support Xen mmap.
         const XEN_MMAP = 0x0002_0000;
+        /// Support shared objects.
+        const SHARED_OBJECT = 0x0004_0000;
         /// Support transferring internal device state.
         const DEVICE_STATE = 0x0008_0000;
     }
@@ -946,6 +936,25 @@ enum_value! {
     }
 }
 
+/// Contains UUID to interact with associated virtio shared object.
+#[repr(C)]
+#[derive(Clone, Copy, Default)]
+pub struct VhostUserSharedMsg {
+    /// UUID of the shared object
+    pub uuid: Uuid,
+}
+
+// SAFETY: Safe because VhostUserSharedMsg is a
+// fixed-size array internally and there is no
+// compiler-inserted padding.
+unsafe impl ByteValued for VhostUserSharedMsg {}
+
+impl VhostUserMsgValidator for VhostUserSharedMsg {
+    fn is_valid(&self) -> bool {
+        !(self.uuid.is_nil() || self.uuid.is_max())
+    }
+}
+
 /// Query/send virtio-fs migration state
 // Note: this struct is not defined as `packed` in the SPEC and although
 // it is not necessary, since the struct has no padding, it simplifies
@@ -978,54 +987,6 @@ impl VhostUserMsgValidator for VhostUserTransferDeviceState {
     fn is_valid(&self) -> bool {
         VhostTransferStateDirection::try_from(self.direction).is_ok()
             && VhostTransferStatePhase::try_from(self.phase).is_ok()
-    }
-}
-
-// Bit mask for flags in virtio-fs backend messages
-bitflags! {
-    #[derive(Copy, Clone, Debug, Eq, PartialEq, Default)]
-    /// Flags for virtio-fs backend messages.
-    pub struct VhostUserFSBackendMsgFlags: u64 {
-        /// Empty permission.
-        const EMPTY = 0x0;
-        /// Read permission.
-        const MAP_R = 0x1;
-        /// Write permission.
-        const MAP_W = 0x2;
-    }
-}
-
-/// Max entries in one virtio-fs backend request.
-pub const VHOST_USER_FS_BACKEND_ENTRIES: usize = 8;
-
-/// Backend request message to update the MMIO window.
-#[repr(C, packed)]
-#[derive(Copy, Clone, Default)]
-pub struct VhostUserFSBackendMsg {
-    /// File offset.
-    pub fd_offset: [u64; VHOST_USER_FS_BACKEND_ENTRIES],
-    /// Offset into the DAX window.
-    pub cache_offset: [u64; VHOST_USER_FS_BACKEND_ENTRIES],
-    /// Size of region to map.
-    pub len: [u64; VHOST_USER_FS_BACKEND_ENTRIES],
-    /// Flags for the mmap operation
-    pub flags: [VhostUserFSBackendMsgFlags; VHOST_USER_FS_BACKEND_ENTRIES],
-}
-
-// SAFETY: Safe because all fields of VhostUserFSBackendMsg are POD.
-unsafe impl ByteValued for VhostUserFSBackendMsg {}
-
-impl VhostUserMsgValidator for VhostUserFSBackendMsg {
-    fn is_valid(&self) -> bool {
-        for i in 0..VHOST_USER_FS_BACKEND_ENTRIES {
-            if ({ self.flags[i] }.bits() & !VhostUserFSBackendMsgFlags::all().bits()) != 0
-                || self.fd_offset[i].checked_add(self.len[i]).is_none()
-                || self.cache_offset[i].checked_add(self.len[i]).is_none()
-            {
-                return false;
-            }
-        }
-        true
     }
 }
 
@@ -1455,22 +1416,5 @@ mod tests {
         assert!(msg.is_valid());
         msg.flags |= 0x4;
         assert!(!msg.is_valid());
-    }
-
-    #[test]
-    fn test_vhost_user_fs_backend() {
-        let mut fs_backend = VhostUserFSBackendMsg::default();
-
-        assert!(fs_backend.is_valid());
-
-        fs_backend.fd_offset[0] = 0xffff_ffff_ffff_ffff;
-        fs_backend.len[0] = 0x1;
-        assert!(!fs_backend.is_valid());
-
-        assert_ne!(
-            VhostUserFSBackendMsgFlags::MAP_R,
-            VhostUserFSBackendMsgFlags::MAP_W
-        );
-        assert_eq!(VhostUserFSBackendMsgFlags::EMPTY.bits(), 0);
     }
 }

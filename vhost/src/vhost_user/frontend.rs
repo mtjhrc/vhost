@@ -106,7 +106,7 @@ pub struct Frontend {
 
 impl Frontend {
     /// Create a new instance.
-    fn new(ep: Endpoint<FrontendReq>, max_queue_num: u64) -> Self {
+    fn new(ep: Endpoint<VhostUserMsgHeader<FrontendReq>>, max_queue_num: u64) -> Self {
         Frontend {
             node: Arc::new(Mutex::new(FrontendInternal {
                 main_sock: ep,
@@ -128,7 +128,10 @@ impl Frontend {
 
     /// Create a new instance from a Unix stream socket.
     pub fn from_stream(sock: UnixStream, max_queue_num: u64) -> Self {
-        Self::new(Endpoint::<FrontendReq>::from_stream(sock), max_queue_num)
+        Self::new(
+            Endpoint::<VhostUserMsgHeader<FrontendReq>>::from_stream(sock),
+            max_queue_num,
+        )
     }
 
     /// Create a new vhost-user frontend endpoint.
@@ -140,7 +143,7 @@ impl Frontend {
     pub fn connect<P: AsRef<Path>>(path: P, max_queue_num: u64) -> Result<Self> {
         let mut retry_count = 5;
         let endpoint = loop {
-            match Endpoint::<FrontendReq>::connect(&path) {
+            match Endpoint::<VhostUserMsgHeader<FrontendReq>>::connect(&path) {
                 Ok(endpoint) => break Ok(endpoint),
                 Err(e) => match &e {
                     VhostUserError::SocketConnect(why) => {
@@ -362,12 +365,9 @@ impl VhostUserFrontend for Frontend {
         let hdr = node.send_request_header(FrontendReq::GET_PROTOCOL_FEATURES, None)?;
         let val = node.recv_reply::<VhostUserU64>(&hdr)?;
         node.protocol_features = val.value;
-        // Should we support forward compatibility?
-        // If so just mask out unrecognized flags instead of return errors.
-        match VhostUserProtocolFeatures::from_bits(node.protocol_features) {
-            Some(val) => Ok(val),
-            None => error_code(VhostUserError::InvalidMessage),
-        }
+        Ok(VhostUserProtocolFeatures::from_bits_truncate(
+            node.protocol_features,
+        ))
     }
 
     fn set_protocol_features(&mut self, features: VhostUserProtocolFeatures) -> Result<()> {
@@ -600,7 +600,7 @@ impl VhostUserMemoryContext {
 
 struct FrontendInternal {
     // Used to send requests to the backend.
-    main_sock: Endpoint<FrontendReq>,
+    main_sock: Endpoint<VhostUserMsgHeader<FrontendReq>>,
     // Cached virtio features from the backend.
     virtio_features: u64,
     // Cached acked virtio features from the driver.
@@ -811,6 +811,8 @@ mod tests {
 
     use std::path::PathBuf;
 
+    const INVALID_PROTOCOL_FEATURE: u64 = 1 << 63;
+
     fn temp_path() -> PathBuf {
         PathBuf::from(format!(
             "/tmp/vhost_test_{}",
@@ -818,7 +820,9 @@ mod tests {
         ))
     }
 
-    fn create_pair<P: AsRef<Path>>(path: P) -> (Frontend, Endpoint<FrontendReq>) {
+    fn create_pair<P: AsRef<Path>>(
+        path: P,
+    ) -> (Frontend, Endpoint<VhostUserMsgHeader<FrontendReq>>) {
         let listener = Listener::new(&path, true).unwrap();
         listener.set_nonblocking(true).unwrap();
         let frontend = Frontend::connect(path, 2).unwrap();
@@ -833,7 +837,9 @@ mod tests {
         listener.set_nonblocking(true).unwrap();
 
         let frontend = Frontend::connect(&path, 1).unwrap();
-        let mut backend = Endpoint::<FrontendReq>::from_stream(listener.accept().unwrap().unwrap());
+        let mut backend = Endpoint::<VhostUserMsgHeader<FrontendReq>>::from_stream(
+            listener.accept().unwrap().unwrap(),
+        );
 
         assert!(frontend.as_raw_fd() > 0);
         // Send two messages continuously
@@ -935,7 +941,8 @@ mod tests {
 
         let pfeatures = VhostUserProtocolFeatures::all();
         let hdr = VhostUserMsgHeader::new(FrontendReq::GET_PROTOCOL_FEATURES, 0x4, 8);
-        let msg = VhostUserU64::new(pfeatures.bits());
+        // Unknown feature bits should be ignored.
+        let msg = VhostUserU64::new(pfeatures.bits() | INVALID_PROTOCOL_FEATURE);
         peer.send_message(&hdr, &msg, None).unwrap();
         let features = frontend.get_protocol_features().unwrap();
         assert_eq!(features, pfeatures);
@@ -1001,7 +1008,7 @@ mod tests {
             .unwrap_err();
     }
 
-    fn create_pair2() -> (Frontend, Endpoint<FrontendReq>) {
+    fn create_pair2() -> (Frontend, Endpoint<VhostUserMsgHeader<FrontendReq>>) {
         let path = temp_path();
         let (frontend, peer) = create_pair(path);
 

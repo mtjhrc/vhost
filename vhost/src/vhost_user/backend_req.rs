@@ -14,10 +14,13 @@ use super::{Error, HandlerResult, Result, VhostUserFrontendReqHandler};
 use vm_memory::ByteValued;
 
 struct BackendInternal {
-    sock: Endpoint<BackendReq>,
+    sock: Endpoint<VhostUserMsgHeader<BackendReq>>,
 
     // Protocol feature VHOST_USER_PROTOCOL_F_REPLY_ACK has been negotiated.
     reply_ack_negotiated: bool,
+
+    // Protocol feature VHOST_USER_PROTOCOL_F_SHARED_OBJECT has been negotiated.
+    shared_object_negotiated: bool,
 
     // whether the endpoint has encountered any failure
     error: Option<i32>,
@@ -83,11 +86,12 @@ pub struct Backend {
 }
 
 impl Backend {
-    fn new(ep: Endpoint<BackendReq>) -> Self {
+    fn new(ep: Endpoint<VhostUserMsgHeader<BackendReq>>) -> Self {
         Backend {
             node: Arc::new(Mutex::new(BackendInternal {
                 sock: ep,
                 reply_ack_negotiated: false,
+                shared_object_negotiated: false,
                 error: None,
             })),
         }
@@ -110,7 +114,9 @@ impl Backend {
 
     /// Create a new instance from a `UnixStream` object.
     pub fn from_stream(sock: UnixStream) -> Self {
-        Self::new(Endpoint::<BackendReq>::from_stream(sock))
+        Self::new(Endpoint::<VhostUserMsgHeader<BackendReq>>::from_stream(
+            sock,
+        ))
     }
 
     /// Set the negotiation state of the `VHOST_USER_PROTOCOL_F_REPLY_ACK` protocol feature.
@@ -122,6 +128,14 @@ impl Backend {
         self.node().reply_ack_negotiated = enable;
     }
 
+    /// Set the negotiation state of the `VHOST_USER_PROTOCOL_F_SHARED_OBJECT` protocol feature.
+    ///
+    /// When the `VHOST_USER_PROTOCOL_F_SHARED_OBJECT` protocol feature has been negotiated,
+    /// the backend is allowed to send "SHARED_OBJECT_*" messages to the frontend.
+    pub fn set_shared_object_flag(&self, enable: bool) {
+        self.node().shared_object_negotiated = enable;
+    }
+
     /// Mark endpoint as failed with specified error code.
     pub fn set_failed(&self, error: i32) {
         self.node().error = Some(error);
@@ -129,14 +143,45 @@ impl Backend {
 }
 
 impl VhostUserFrontendReqHandler for Backend {
-    /// Forward vhost-user-fs map file requests to the backend.
-    fn fs_backend_map(&self, fs: &VhostUserFSBackendMsg, fd: &dyn AsRawFd) -> HandlerResult<u64> {
-        self.send_message(BackendReq::FS_MAP, fs, Some(&[fd.as_raw_fd()]))
+    /// Forward vhost-user shared-object add request to the frontend.
+    fn shared_object_add(&self, uuid: &VhostUserSharedMsg) -> HandlerResult<u64> {
+        if !self.node().shared_object_negotiated {
+            return Err(io::Error::new(
+                io::ErrorKind::Other,
+                "Shared Object feature not negotiated",
+            ));
+        }
+        self.send_message(BackendReq::SHARED_OBJECT_ADD, uuid, None)
     }
 
-    /// Forward vhost-user-fs unmap file requests to the frontend.
-    fn fs_backend_unmap(&self, fs: &VhostUserFSBackendMsg) -> HandlerResult<u64> {
-        self.send_message(BackendReq::FS_UNMAP, fs, None)
+    /// Forward vhost-user shared-object remove request to the frontend.
+    fn shared_object_remove(&self, uuid: &VhostUserSharedMsg) -> HandlerResult<u64> {
+        if !self.node().shared_object_negotiated {
+            return Err(io::Error::new(
+                io::ErrorKind::Other,
+                "Shared Object feature not negotiated",
+            ));
+        }
+        self.send_message(BackendReq::SHARED_OBJECT_REMOVE, uuid, None)
+    }
+
+    /// Forward vhost-user shared-object lookup request to the frontend.
+    fn shared_object_lookup(
+        &self,
+        uuid: &VhostUserSharedMsg,
+        fd: &dyn AsRawFd,
+    ) -> HandlerResult<u64> {
+        if !self.node().shared_object_negotiated {
+            return Err(io::Error::new(
+                io::ErrorKind::Other,
+                "Shared Object feature not negotiated",
+            ));
+        }
+        self.send_message(
+            BackendReq::SHARED_OBJECT_LOOKUP,
+            uuid,
+            Some(&[fd.as_raw_fd()]),
+        )
     }
 }
 
@@ -158,15 +203,15 @@ mod tests {
 
     #[test]
     fn test_backend_req_send_failure() {
-        let (p1, p2) = UnixStream::pair().unwrap();
+        let (p1, _) = UnixStream::pair().unwrap();
         let backend = Backend::from_stream(p1);
 
         backend.set_failed(libc::ECONNRESET);
         backend
-            .fs_backend_map(&VhostUserFSBackendMsg::default(), &p2)
+            .shared_object_add(&VhostUserSharedMsg::default())
             .unwrap_err();
         backend
-            .fs_backend_unmap(&VhostUserFSBackendMsg::default())
+            .shared_object_remove(&VhostUserSharedMsg::default())
             .unwrap_err();
         backend.node().error = None;
     }
@@ -175,11 +220,11 @@ mod tests {
     fn test_backend_req_recv_negative() {
         let (p1, p2) = UnixStream::pair().unwrap();
         let backend = Backend::from_stream(p1);
-        let mut frontend = Endpoint::<BackendReq>::from_stream(p2);
+        let mut frontend = Endpoint::<VhostUserMsgHeader<BackendReq>>::from_stream(p2);
 
-        let len = mem::size_of::<VhostUserFSBackendMsg>();
+        let len = mem::size_of::<VhostUserSharedMsg>();
         let mut hdr = VhostUserMsgHeader::new(
-            BackendReq::FS_MAP,
+            BackendReq::SHARED_OBJECT_ADD,
             VhostUserHeaderFlag::REPLY.bits(),
             len as u32,
         );
@@ -189,31 +234,36 @@ mod tests {
             .send_message(&hdr, &body, Some(&[frontend.as_raw_fd()]))
             .unwrap();
         backend
-            .fs_backend_map(&VhostUserFSBackendMsg::default(), &frontend)
+            .shared_object_add(&VhostUserSharedMsg::default())
+            .unwrap_err();
+
+        backend.set_shared_object_flag(true);
+        backend
+            .shared_object_add(&VhostUserSharedMsg::default())
             .unwrap();
 
         backend.set_reply_ack_flag(true);
         backend
-            .fs_backend_map(&VhostUserFSBackendMsg::default(), &frontend)
+            .shared_object_add(&VhostUserSharedMsg::default())
             .unwrap_err();
 
-        hdr.set_code(BackendReq::FS_UNMAP);
+        hdr.set_code(BackendReq::SHARED_OBJECT_REMOVE);
         frontend.send_message(&hdr, &body, None).unwrap();
         backend
-            .fs_backend_map(&VhostUserFSBackendMsg::default(), &frontend)
+            .shared_object_add(&VhostUserSharedMsg::default())
             .unwrap_err();
-        hdr.set_code(BackendReq::FS_MAP);
+        hdr.set_code(BackendReq::SHARED_OBJECT_ADD);
 
         let body = VhostUserU64::new(1);
         frontend.send_message(&hdr, &body, None).unwrap();
         backend
-            .fs_backend_map(&VhostUserFSBackendMsg::default(), &frontend)
+            .shared_object_add(&VhostUserSharedMsg::default())
             .unwrap_err();
 
         let body = VhostUserU64::new(0);
         frontend.send_message(&hdr, &body, None).unwrap();
         backend
-            .fs_backend_map(&VhostUserFSBackendMsg::default(), &frontend)
+            .shared_object_add(&VhostUserSharedMsg::default())
             .unwrap();
     }
 }

@@ -2,8 +2,14 @@
 ## [Unreleased]
 
 ### Added
+- [[#241]](https://github.com/rust-vmm/vhost/pull/241) Add shared objects support
+- [[#239]](https://github.com/rust-vmm/vhost/pull/239) Add support for `VHOST_USER_GPU_SET_SOCKET`
 
 ### Changed
+- [[#243]](https://github.com/rust-vmm/vhost/pull/243) Ignore unknown bits in `VHOST_USER_GET_PROTOCOL_FEATURES` response.
+
+### Remove
+- [[#246]](https://github.com/rust-vmm/vhost/pull/246) Remove support for FS_* requests
 
 ### Fixed
 
