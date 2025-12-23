@@ -1,4 +1,3 @@
-use std::ffi::CString;
 use std::fs::File;
 use std::io::Result;
 use std::os::unix::io::AsRawFd;
@@ -19,6 +18,9 @@ use vm_memory::{
     FileOffset, GuestAddress, GuestAddressSpace, GuestMemory, GuestMemoryAtomic, GuestMemoryMmap,
 };
 use vmm_sys_util::epoll::EventSet;
+use vmm_sys_util::event::{
+    new_event_consumer_and_notifier, EventConsumer, EventFlag, EventNotifier,
+};
 use vmm_sys_util::eventfd::EventFd;
 
 struct MockVhostBackend {
@@ -60,7 +62,8 @@ impl VhostUserBackendMut for MockVhostBackend {
     }
 
     fn protocol_features(&self) -> VhostUserProtocolFeatures {
-        VhostUserProtocolFeatures::all()
+        // Exclude REPLY_ACK to test that it is automatically added.
+        VhostUserProtocolFeatures::all() - VhostUserProtocolFeatures::REPLY_ACK
     }
 
     fn reset_device(&mut self) {
@@ -105,10 +108,11 @@ impl VhostUserBackendMut for MockVhostBackend {
         vec![1, 1]
     }
 
-    fn exit_event(&self, _thread_index: usize) -> Option<EventFd> {
-        let event_fd = EventFd::new(0).unwrap();
-
-        Some(event_fd)
+    fn exit_event(&self, _thread_index: usize) -> Option<(EventConsumer, EventNotifier)> {
+        Some(
+            new_event_consumer_and_notifier(EventFlag::empty())
+                .expect("Failed to create EventConsumer and EventNotifier"),
+        )
     }
 
     fn handle_event(
@@ -166,11 +170,7 @@ fn vhost_user_client(path: &Path, barrier: Arc<Barrier>) {
     frontend.set_protocol_features(proto).unwrap();
     assert!(proto.contains(VhostUserProtocolFeatures::REPLY_ACK));
 
-    let memfd = nix::sys::memfd::memfd_create(
-        &CString::new("test").unwrap(),
-        nix::sys::memfd::MemFdCreateFlag::empty(),
-    )
-    .unwrap();
+    let memfd = nix::sys::memfd::memfd_create("test", nix::sys::memfd::MFdFlags::empty()).unwrap();
     let file = File::from(memfd);
     file.set_len(0x100000).unwrap();
     let file_offset = FileOffset::new(file, 0);
@@ -260,9 +260,9 @@ fn vhost_user_server_with_fn<F: FnOnce(Arc<Mutex<MockVhostBackend>>, Arc<Barrier
     let path1 = path.clone();
     let thread = thread::spawn(move || cb(&path1, barrier2));
 
-    let listener = Listener::new(&path, false).unwrap();
+    let mut listener = Listener::new(&path, false).unwrap();
     barrier.wait();
-    daemon.start(listener).unwrap();
+    daemon.start(&mut listener).unwrap();
     barrier.wait();
 
     server_fn(backend, barrier);

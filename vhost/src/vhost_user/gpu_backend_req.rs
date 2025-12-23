@@ -21,7 +21,7 @@ struct BackendInternal {
 }
 
 fn io_err_convert_fn(info: &str) -> impl Fn(vhost_user::Error) -> io::Error + '_ {
-    move |e| io::Error::new(io::ErrorKind::Other, format!("{info}: {e}"))
+    move |e| io::Error::other(format!("{info}: {e}"))
 }
 
 impl BackendInternal {
@@ -100,7 +100,7 @@ impl BackendInternal {
 
 /// Proxy for sending messages from the backend to the fronted
 /// over the socket obtained from VHOST_USER_GPU_SET_SOCKET.
-/// The protocol is documented here: https://www.qemu.org/docs/master/interop/vhost-user-gpu.html
+/// The protocol is documented here: <https://www.qemu.org/docs/master/interop/vhost-user-gpu.html>
 #[derive(Clone)]
 pub struct GpuBackend {
     // underlying Unix domain socket for communication
@@ -117,7 +117,7 @@ impl GpuBackend {
         }
     }
 
-    fn node(&self) -> MutexGuard<BackendInternal> {
+    fn node(&self) -> MutexGuard<'_, BackendInternal> {
         self.node.lock().unwrap()
     }
 

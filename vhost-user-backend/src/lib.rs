@@ -36,10 +36,15 @@ pub use self::vring::{
     VringMutex, VringRwLock, VringState, VringStateGuard, VringStateMutGuard, VringT,
 };
 
-/// Due to the way `xen` handles memory mappings we can not combine it with
-/// `postcopy` feature which relies on persistent memory mappings. Thus we
-/// disallow enabling both features at the same time.
-#[cfg(all(feature = "postcopy", feature = "xen"))]
+// Due to the way `xen` handles memory mappings we can not combine it with
+// `postcopy` feature which relies on persistent memory mappings. Thus we
+// disallow enabling both features at the same time.
+#[cfg(all(
+    not(RUSTDOC_disable_feature_compat_errors),
+    not(doc),
+    feature = "postcopy",
+    feature = "xen"
+))]
 compile_error!("Both `postcopy` and `xen` features can not be enabled at the same time.");
 
 /// An alias for `GuestMemoryAtomic<GuestMemoryMmap<B>>` to simplify code.
@@ -67,17 +72,17 @@ pub enum Error {
 impl Display for Error {
     fn fmt(&self, f: &mut Formatter) -> std::fmt::Result {
         match self {
-            Error::NewVhostUserHandler(e) => write!(f, "cannot create vhost user handler: {}", e),
-            Error::CreateBackendListener(e) => write!(f, "cannot create backend listener: {}", e),
+            Error::NewVhostUserHandler(e) => write!(f, "cannot create vhost user handler: {e}"),
+            Error::CreateBackendListener(e) => write!(f, "cannot create backend listener: {e}"),
             Error::CreateBackendReqHandler(e) => {
-                write!(f, "cannot create backend req handler: {}", e)
+                write!(f, "cannot create backend req handler: {e}")
             }
             Error::CreateVhostUserListener(e) => {
-                write!(f, "cannot create vhost-user listener: {}", e)
+                write!(f, "cannot create vhost-user listener: {e}")
             }
-            Error::StartDaemon(e) => write!(f, "failed to start daemon: {}", e),
+            Error::StartDaemon(e) => write!(f, "failed to start daemon: {e}"),
             Error::WaitDaemon(_e) => write!(f, "failed to wait for daemon exit"),
-            Error::HandleRequest(e) => write!(f, "failed to handle request: {}", e),
+            Error::HandleRequest(e) => write!(f, "failed to handle request: {e}"),
         }
     }
 }
@@ -162,9 +167,7 @@ where
     ///
     /// *Note:* A convenience function [VhostUserDaemon::serve] exists that
     /// may be a better option than this for simple use-cases.
-    // TODO: the current implementation has limitations that only one incoming connection will be
-    // handled from the listener. Should it be enhanced to support reconnection?
-    pub fn start(&mut self, listener: Listener) -> Result<()> {
+    pub fn start(&mut self, listener: &mut Listener) -> Result<()> {
         let mut backend_listener = BackendListener::new(listener, self.handler.clone())
             .map_err(Error::CreateBackendListener)?;
         let backend_handler = self.accept(&mut backend_listener)?;
@@ -215,9 +218,9 @@ where
     /// *Note:* See [VhostUserDaemon::start] and [VhostUserDaemon::wait] if you
     /// need more flexibility.
     pub fn serve<P: AsRef<Path>>(&mut self, socket: P) -> Result<()> {
-        let listener = Listener::new(socket, true).map_err(Error::CreateVhostUserListener)?;
+        let mut listener = Listener::new(socket, true).map_err(Error::CreateVhostUserListener)?;
 
-        self.start(listener)?;
+        self.start(&mut listener)?;
         let result = self.wait();
 
         // Regardless of the result, we want to signal worker threads to exit
@@ -279,9 +282,9 @@ mod tests {
                 drop(socket)
             });
 
-            let listener = Listener::new(&path, false).unwrap();
+            let mut listener = Listener::new(&path, false).unwrap();
             barrier.wait();
-            daemon.start(listener).unwrap();
+            daemon.start(&mut listener).unwrap();
             barrier.wait();
             // Above process generates a `HandleRequest(PartialMessage)` error.
             daemon.wait().unwrap_err();
@@ -350,7 +353,7 @@ mod tests {
                 let fd = backend.exit_event(thread_id).unwrap();
                 // Reading from exit fd should fail since nothing was written yet
                 assert_eq!(
-                    fd.read().unwrap_err().raw_os_error().unwrap(),
+                    fd.0.consume().unwrap_err().raw_os_error().unwrap(),
                     EAGAIN,
                     "exit event should not have been raised yet!"
                 );
@@ -365,7 +368,7 @@ mod tests {
         let backend = backend.lock().unwrap();
         for thread_id in 0..backend.queues_per_thread().len() {
             let fd = backend.exit_event(thread_id).unwrap();
-            assert!(fd.read().is_ok(), "No exit event was raised!");
+            assert!(fd.0.consume().is_ok(), "No exit event was raised!");
         }
     }
 }

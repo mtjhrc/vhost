@@ -15,7 +15,7 @@ use std::sync::{Arc, Mutex, MutexGuard, RwLock, RwLockReadGuard, RwLockWriteGuar
 
 use virtio_queue::{Error as VirtQueError, Queue, QueueT};
 use vm_memory::{GuestAddress, GuestAddressSpace, GuestMemoryAtomic, GuestMemoryMmap};
-use vmm_sys_util::eventfd::EventFd;
+use vmm_sys_util::event::{EventConsumer, EventNotifier};
 
 /// Trait for objects returned by `VringT::get_ref()`.
 pub trait VringStateGuard<'a, M: GuestAddressSpace> {
@@ -38,10 +38,10 @@ pub trait VringT<M: GuestAddressSpace>:
         Self: Sized;
 
     /// Get an immutable reference to the kick event fd.
-    fn get_ref(&self) -> <Self as VringStateGuard<M>>::G;
+    fn get_ref(&self) -> <Self as VringStateGuard<'_, M>>::G;
 
     /// Get a mutable reference to the kick event fd.
-    fn get_mut(&self) -> <Self as VringStateMutGuard<M>>::G;
+    fn get_mut(&self) -> <Self as VringStateMutGuard<'_, M>>::G;
 
     /// Add an used descriptor into the used queue.
     fn add_used(&self, desc_index: u16, len: u32) -> Result<(), VirtQueError>;
@@ -109,9 +109,9 @@ pub trait VringT<M: GuestAddressSpace>:
 /// object for single-threaded context.
 pub struct VringState<M: GuestAddressSpace = GuestMemoryAtomic<GuestMemoryMmap>> {
     queue: Queue,
-    kick: Option<EventFd>,
-    call: Option<EventFd>,
-    err: Option<EventFd>,
+    kick: Option<EventConsumer>,
+    call: Option<EventNotifier>,
+    err: Option<EventConsumer>,
     enabled: bool,
     mem: M,
 }
@@ -148,7 +148,7 @@ impl<M: GuestAddressSpace> VringState<M> {
     /// Notify the vhost-user frontend that used descriptors have been put into the used queue.
     pub fn signal_used_queue(&self) -> io::Result<()> {
         if let Some(call) = self.call.as_ref() {
-            call.write(1)
+            call.notify()
         } else {
             Ok(())
         }
@@ -227,7 +227,7 @@ impl<M: GuestAddressSpace> VringState<M> {
     }
 
     /// Get the `EventFd` for kick.
-    pub fn get_kick(&self) -> &Option<EventFd> {
+    pub fn get_kick(&self) -> &Option<EventConsumer> {
         &self.kick
     }
 
@@ -237,13 +237,13 @@ impl<M: GuestAddressSpace> VringState<M> {
         // EventFd requires that it has sole ownership of its fd. So does File, so this is safe.
         // Ideally, we'd have a generic way to refer to a uniquely-owned fd, such as that proposed
         // by Rust RFC #3128.
-        self.kick = file.map(|f| unsafe { EventFd::from_raw_fd(f.into_raw_fd()) });
+        self.kick = file.map(|f| unsafe { EventConsumer::from_raw_fd(f.into_raw_fd()) });
     }
 
     /// Read event from the kick `EventFd`.
     fn read_kick(&self) -> io::Result<bool> {
         if let Some(kick) = &self.kick {
-            kick.read()?;
+            kick.consume()?;
         }
 
         Ok(self.enabled)
@@ -252,18 +252,18 @@ impl<M: GuestAddressSpace> VringState<M> {
     /// Set `EventFd` for call.
     fn set_call(&mut self, file: Option<File>) {
         // SAFETY: see comment in set_kick()
-        self.call = file.map(|f| unsafe { EventFd::from_raw_fd(f.into_raw_fd()) });
+        self.call = file.map(|f| unsafe { EventNotifier::from_raw_fd(f.into_raw_fd()) });
     }
 
     /// Get the `EventFd` for call.
-    pub fn get_call(&self) -> &Option<EventFd> {
+    pub fn get_call(&self) -> &Option<EventNotifier> {
         &self.call
     }
 
     /// Set `EventFd` for err.
     fn set_err(&mut self, file: Option<File>) {
         // SAFETY: see comment in set_kick()
-        self.err = file.map(|f| unsafe { EventFd::from_raw_fd(f.into_raw_fd()) });
+        self.err = file.map(|f| unsafe { EventConsumer::from_raw_fd(f.into_raw_fd()) });
     }
 }
 
@@ -275,7 +275,7 @@ pub struct VringMutex<M: GuestAddressSpace = GuestMemoryAtomic<GuestMemoryMmap>>
 
 impl<M: GuestAddressSpace> VringMutex<M> {
     /// Get a mutable guard to the underlying raw `VringState` object.
-    fn lock(&self) -> MutexGuard<VringState<M>> {
+    fn lock(&self) -> MutexGuard<'_, VringState<M>> {
         self.state.lock().unwrap()
     }
 }
@@ -295,11 +295,11 @@ impl<M: 'static + GuestAddressSpace> VringT<M> for VringMutex<M> {
         })
     }
 
-    fn get_ref(&self) -> <Self as VringStateGuard<M>>::G {
+    fn get_ref(&self) -> <Self as VringStateGuard<'_, M>>::G {
         self.state.lock().unwrap()
     }
 
-    fn get_mut(&self) -> <Self as VringStateMutGuard<M>>::G {
+    fn get_mut(&self) -> <Self as VringStateMutGuard<'_, M>>::G {
         self.lock()
     }
 
@@ -390,7 +390,7 @@ pub struct VringRwLock<M: GuestAddressSpace = GuestMemoryAtomic<GuestMemoryMmap>
 
 impl<M: GuestAddressSpace> VringRwLock<M> {
     /// Get a mutable guard to the underlying raw `VringState` object.
-    fn write_lock(&self) -> RwLockWriteGuard<VringState<M>> {
+    fn write_lock(&self) -> RwLockWriteGuard<'_, VringState<M>> {
         self.state.write().unwrap()
     }
 }
@@ -410,11 +410,11 @@ impl<M: 'static + GuestAddressSpace> VringT<M> for VringRwLock<M> {
         })
     }
 
-    fn get_ref(&self) -> <Self as VringStateGuard<M>>::G {
+    fn get_ref(&self) -> <Self as VringStateGuard<'_, M>>::G {
         self.state.read().unwrap()
     }
 
-    fn get_mut(&self) -> <Self as VringStateMutGuard<M>>::G {
+    fn get_mut(&self) -> <Self as VringStateMutGuard<'_, M>>::G {
         self.write_lock()
     }
 
@@ -500,9 +500,8 @@ impl<M: 'static + GuestAddressSpace> VringT<M> for VringRwLock<M> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::os::unix::io::AsRawFd;
     use vm_memory::bitmap::AtomicBitmap;
-    use vmm_sys_util::eventfd::EventFd;
+    use vmm_sys_util::event::{new_event_consumer_and_notifier, EventFlag};
 
     #[test]
     fn test_new_vring() {
@@ -549,37 +548,34 @@ mod tests {
         vring.set_enabled(true);
         assert!(vring.get_ref().enabled);
 
-        let eventfd = EventFd::new(0).unwrap();
+        let (consumer, notifier) = new_event_consumer_and_notifier(EventFlag::empty()).unwrap();
         // SAFETY: Safe because we panic before if eventfd is not valid.
-        let file = unsafe { File::from_raw_fd(eventfd.as_raw_fd()) };
+        let file = unsafe { File::from_raw_fd(consumer.into_raw_fd()) };
         assert!(vring.get_mut().kick.is_none());
         assert!(vring.read_kick().unwrap());
         vring.set_kick(Some(file));
-        eventfd.write(1).unwrap();
+        notifier.notify().unwrap();
         assert!(vring.read_kick().unwrap());
         assert!(vring.get_ref().kick.is_some());
         vring.set_kick(None);
         assert!(vring.get_ref().kick.is_none());
-        std::mem::forget(eventfd);
 
-        let eventfd = EventFd::new(0).unwrap();
+        let (_consumer, notifier) = new_event_consumer_and_notifier(EventFlag::empty()).unwrap();
         // SAFETY: Safe because we panic before if eventfd is not valid.
-        let file = unsafe { File::from_raw_fd(eventfd.as_raw_fd()) };
+        let file = unsafe { File::from_raw_fd(notifier.into_raw_fd()) };
         assert!(vring.get_ref().call.is_none());
         vring.set_call(Some(file));
         assert!(vring.get_ref().call.is_some());
         vring.set_call(None);
         assert!(vring.get_ref().call.is_none());
-        std::mem::forget(eventfd);
 
-        let eventfd = EventFd::new(0).unwrap();
+        let (consumer, _notifier) = new_event_consumer_and_notifier(EventFlag::empty()).unwrap();
         // SAFETY: Safe because we panic before if eventfd is not valid.
-        let file = unsafe { File::from_raw_fd(eventfd.as_raw_fd()) };
+        let file = unsafe { File::from_raw_fd(consumer.into_raw_fd()) };
         assert!(vring.get_ref().err.is_none());
         vring.set_err(Some(file));
         assert!(vring.get_ref().err.is_some());
         vring.set_err(None);
         assert!(vring.get_ref().err.is_none());
-        std::mem::forget(eventfd);
     }
 }

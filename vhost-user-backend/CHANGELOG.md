@@ -1,14 +1,36 @@
 # Changelog
+
 ## [Unreleased]
+
+### Added
+### Changed
+### Deprecated
+### Fixed
+
+## v0.21.0
+
+### Changed
+- [[#308]](https://github.com/rust-vmm/vhost/pull/308) Replace Eventfd with EventNotifier/EventConsumer.
+- [[#321]](https://github.com/rust-vmm/vhost/pull/321) Don't take ownership of listener in `VhostUserDaemon::start`.
+- [[#333]](https://github.com/rust-vmm/vhost/pull/333) Updated virtio-queue to 0.17.0, vm-memory to 0.17.1, vmm-sys-util to 0.15.0 and vhost to 0.15.0
+
+## v0.20.0
+
+### Changed
+- [[306]](https://github.com/rust-vmm/vhost/pull/306) Updated virtio-queue to v0.16.0 and virtio-bindings to v0.2.6
+
+## v0.19.0
+
+### Changed
+- [[299]](https://github.com/rust-vmm/vhost/pull/299) Updated virtio-queue to v0.15.0 and virtio-bindings to v0.2.5
+
+## v0.18.0
 
 ### Added
 - [[#268]](https://github.com/rust-vmm/vhost/pull/268) Add support for `VHOST_USER_GET_SHARED_OBJECT`
 
 ### Changed
-
-### Deprecated
-
-### Fixed
+- [[#295]](https://github.com/rust-vmm/vhost/pull/295) Updated vm-memory to 0.16.2 and vmm-sys-util to 0.14.0
 
 ## v0.17.0
 
